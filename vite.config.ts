@@ -15,7 +15,19 @@ const rootDir = fileURLToPath(new URL('.', import.meta.url))
 // `new Worker(new URL('./pyodide-worker.js', import.meta.url))`; Vite detects
 // that pattern and automatically emits it as a content-hashed asset under
 // dist/assets/, rewriting the URL reference to match - no manual copy needed.
+//
+// `base: './'` is required so that rewritten reference is a *relative*
+// "./assets/pyodide-worker-<hash>.js" rather than a root-absolute
+// "/assets/pyodide-worker-<hash>.js". This package is consumed as a
+// dependency from inside another app's build (or straight out of
+// node_modules in dev), so it has no way of knowing what the final site's
+// root path is - a root-absolute reference would resolve against the
+// *consuming app's* origin instead of this package's own install location,
+// breaking worker loading. A relative reference resolves against
+// `import.meta.url` (this module's own location) wherever it ends up, which
+// works consistently in all contexts.
 export default defineConfig({
+  base: './',
   plugins: [
     react(),
     dts({
