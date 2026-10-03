@@ -1,0 +1,46 @@
+{
+  "name": "glpython-editor",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Embeddable Python editor + step-by-step visualizer + turtle graphics panel, extracted from glpython.",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/src/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./style.css": "./dist/style.css"
+  },
+  "scripts": {
+    "dev": "vite build --watch",
+    "build": "tsc -b && vite build && cp src/style.css dist/style.css",
+    "lint": "oxlint",
+    "prepare": "npm run build"
+  },
+  "peerDependencies": {
+    "@monaco-editor/react": "^4.7.0",
+    "lucide-react": "^1.47.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@monaco-editor/react": "^4.7.0",
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^6.1.1",
+    "lucide-react": "^1.47.0",
+    "oxlint": "^1.81.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "typescript": "~6.0.2",
+    "vite": "^8.3.0",
+    "vite-plugin-dts": "^4.5.0"
+  }
+}
