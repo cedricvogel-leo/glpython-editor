@@ -119,9 +119,10 @@ origin that is allowed to communicate with it:
 https://example.test/embed/?parentOrigin=https%3A%2F%2Fcourse.example
 ```
 
-It sends `glpython:ready`, accepts a versioned `glpython:load` message, and
-sends `glpython:resize` as its content size changes. The public TypeScript
-types and validators are exported from `glpython-editor`.
+It sends `glpython:ready` with runtime capabilities, accepts a versioned
+`glpython:load` message, and sends `glpython:resize` as its content size
+changes. The public TypeScript types and validators are exported from
+`glpython-editor`.
 
 ```ts
 iframe.contentWindow?.postMessage({
@@ -149,11 +150,17 @@ shell project.
 
 The embed development and preview servers set
 `Cross-Origin-Opener-Policy: same-origin` and
-`Cross-Origin-Embedder-Policy: require-corp`. Production hosting must set
-equivalent headers for `SharedArrayBuffer` and `input()` support. Because
-cross-origin isolation is also affected by the top-level embedding page,
-`input()` must be tested in the actual course host; normal execution and
-visualization do not require the synchronous input channel.
+`Cross-Origin-Embedder-Policy: require-corp`. The production build also ships a
+vendored `coi-serviceworker` fallback for static hosts that cannot configure
+headers. It registers only when the embed runs as the top-level page, avoiding
+reload loops in a cross-origin iframe.
+
+Cross-origin isolation is controlled by the complete browsing context, not only
+the iframe response. A glpython iframe inside a non-isolated course host cannot
+use `SharedArrayBuffer`, even if the iframe itself ships the service worker.
+The `glpython:ready` message therefore reports `capabilities.input`; hosts must
+not assume synchronous `input()` support. Normal execution, visualization, and
+turtle graphics do not require the synchronous input channel.
 
 ## Notes on the build
 

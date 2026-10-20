@@ -15,6 +15,9 @@ export type GlPythonParentMessage = GlPythonLoadMessage
 export type GlPythonReadyMessage = {
   type: 'glpython:ready'
   version: typeof GLPYTHON_EMBED_PROTOCOL_VERSION
+  capabilities: {
+    input: boolean
+  }
 }
 
 export type GlPythonResizeMessage = {
