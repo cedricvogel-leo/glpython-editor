@@ -16,12 +16,12 @@ body,
 }
 
 .embed-app {
-  min-height: 560px;
+  min-height: 160px;
   padding: 12px;
 }
 
 .embed-app .glpython-workspace {
-  min-height: 536px;
+  min-height: 136px;
 }
 
 .embed-configuration-error {

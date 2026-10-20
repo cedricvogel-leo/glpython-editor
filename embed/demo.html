@@ -8,7 +8,7 @@
       body { margin: 0; padding: 20px; color: #263a35; background: #ece9e0; font: 14px system-ui, sans-serif; }
       .controls { display: flex; gap: 8px; margin-bottom: 12px; }
       button { padding: 7px 12px; cursor: pointer; }
-      iframe { width: 100%; height: 620px; border: 1px solid #bbb; border-radius: 8px; background: white; }
+      iframe { width: 100%; height: 260px; border: 1px solid #bbb; border-radius: 8px; background: white; }
       pre { min-height: 32px; padding: 8px; background: #fff; }
     </style>
   </head>
@@ -16,6 +16,9 @@
     <div class="controls">
       <button type="button" data-mode="eval">Load eval example</button>
       <button type="button" data-mode="turtle">Load turtle example</button>
+      <button type="button" data-command="run">Run</button>
+      <button type="button" data-command="visualize">Visualize</button>
+      <button type="button" data-command="reset">Reset</button>
     </div>
     <pre id="events" aria-live="polite">Waiting for the embed...</pre>
     <iframe id="embed" title="glpython embed"></iframe>
@@ -30,28 +33,34 @@
       }
       let mode = 'eval'
 
-      const load = () => {
-        iframe.contentWindow?.postMessage({
-          type: 'glpython:load',
+      const send = (command) => {
+        const message = {
+          type: `glpython:${command}`,
           version: GLPYTHON_EMBED_PROTOCOL_VERSION,
-          source: sources[mode],
-          mode,
-        }, window.location.origin)
+        }
+        if (command !== 'reset') {
+          message.source = sources[mode]
+          message.mode = mode
+        }
+        iframe.contentWindow?.postMessage(message, window.location.origin)
       }
 
       iframe.src = `./index.html?parentOrigin=${encodeURIComponent(window.location.origin)}&mode=${mode}`
       document.querySelectorAll('[data-mode]').forEach((button) => {
         button.addEventListener('click', () => {
           mode = button.dataset.mode
-          load()
+          send('load')
         })
+      })
+      document.querySelectorAll('[data-command]').forEach((button) => {
+        button.addEventListener('click', () => send(button.dataset.command))
       })
       window.addEventListener('message', (event) => {
         if (event.origin !== window.location.origin || event.source !== iframe.contentWindow) return
         events.textContent = JSON.stringify(event.data, null, 2)
         if (event.data?.type === 'glpython:ready') {
           events.dataset.inputAvailable = String(event.data.capabilities?.input === true)
-          load()
+          send('load')
         }
         if (event.data?.type === 'glpython:resize' && Number.isFinite(event.data.height)) {
           iframe.style.height = `${Math.max(400, event.data.height)}px`
