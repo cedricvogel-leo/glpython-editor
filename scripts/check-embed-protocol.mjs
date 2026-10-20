@@ -38,6 +38,18 @@ for (const type of ['glpython:run', 'glpython:visualize']) {
 }
 
 assert.deepEqual(parseParentMessage({
+  type: 'glpython:visualize',
+  version: GLPYTHON_EMBED_PROTOCOL_VERSION,
+  source: 'print("visual only")',
+  mode: 'visual',
+}), {
+  type: 'glpython:visualize',
+  version: GLPYTHON_EMBED_PROTOCOL_VERSION,
+  source: 'print("visual only")',
+  mode: 'visual',
+})
+
+assert.deepEqual(parseParentMessage({
   type: 'glpython:reset',
   version: GLPYTHON_EMBED_PROTOCOL_VERSION,
 }), {

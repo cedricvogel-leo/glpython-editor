@@ -140,10 +140,11 @@ export function App() {
         capabilities={{
           actions: false,
           editor: false,
+          exitVisualizer: mode !== 'visual',
           breadcrumbs: false,
           fileTabs: false,
           resetOutput: false,
-          visualization: mode === 'eval',
+          visualization: mode !== 'turtle',
           graphics: mode === 'turtle',
         }}
       />

@@ -86,8 +86,9 @@ the workspace), so the host application controls localization.
 `GlPythonWorkspace` accepts optional `compact` and `capabilities` props. The
 existing behavior remains the default. A compact host can explicitly disable
 the editor, built-in action buttons, breadcrumbs, file tabs, output reset,
-visualization, or graphics. An editor-free host can send immutable `command`
-events to run or visualize a source snapshot supplied by its parent:
+visualization, visualizer exit action, or graphics. An editor-free host can
+send immutable `command` events to run or visualize a source snapshot supplied
+by its parent:
 
 ```tsx
 <GlPythonWorkspace
@@ -97,6 +98,7 @@ events to run or visualize a source snapshot supplied by its parent:
   capabilities={{
     actions: false,
     editor: false,
+    exitVisualizer: false,
     breadcrumbs: false,
     fileTabs: false,
     resetOutput: false,
@@ -115,7 +117,7 @@ npm run preview:embed
 ```
 
 The built app is emitted to `dist-embed/`. `embed/demo.html` is a small parent
-page that exercises both the eval and turtle modes.
+page that exercises the eval, turtle, and visualization-only modes.
 
 The iframe requires a `parentOrigin` query parameter containing the exact
 origin that is allowed to communicate with it:
@@ -141,7 +143,9 @@ iframe.contentWindow?.postMessage({
 ```
 
 Use `mode: 'turtle'` for the graphics layout. The eval layout does not show or
-reserve space for turtle graphics.
+reserve space for turtle graphics. Use `mode: 'visual'` with a
+`glpython:visualize` message for an editor-free visualizer that cannot exit to
+the normal workspace.
 
 ## Development
 
