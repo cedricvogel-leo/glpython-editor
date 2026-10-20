@@ -1,7 +1,7 @@
 export const GLPYTHON_EMBED_PROTOCOL_VERSION = 1
 export const GLPYTHON_MAX_SOURCE_LENGTH = 500_000
 
-export type EmbedMode = 'eval' | 'turtle'
+export type EmbedMode = 'eval' | 'turtle' | 'visual'
 
 export type GlPythonSourceMessage = {
   type: 'glpython:load' | 'glpython:run' | 'glpython:visualize'
@@ -52,7 +52,7 @@ export type GlPythonChildMessage =
   | GlPythonErrorMessage
 
 export function isEmbedMode(value: unknown): value is EmbedMode {
-  return value === 'eval' || value === 'turtle'
+  return value === 'eval' || value === 'turtle' || value === 'visual'
 }
 
 export function parseParentOrigin(value: string | null): string | null {
