@@ -49,7 +49,10 @@
       window.addEventListener('message', (event) => {
         if (event.origin !== window.location.origin || event.source !== iframe.contentWindow) return
         events.textContent = JSON.stringify(event.data, null, 2)
-        if (event.data?.type === 'glpython:ready') load()
+        if (event.data?.type === 'glpython:ready') {
+          events.dataset.inputAvailable = String(event.data.capabilities?.input === true)
+          load()
+        }
         if (event.data?.type === 'glpython:resize' && Number.isFinite(event.data.height)) {
           iframe.style.height = `${Math.max(400, event.data.height)}px`
         }

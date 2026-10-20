@@ -73,7 +73,13 @@ export function App() {
     }
 
     window.addEventListener('message', onMessage)
-    sendToParent({ type: 'glpython:ready', version: GLPYTHON_EMBED_PROTOCOL_VERSION })
+    sendToParent({
+      type: 'glpython:ready',
+      version: GLPYTHON_EMBED_PROTOCOL_VERSION,
+      capabilities: {
+        input: typeof SharedArrayBuffer !== 'undefined',
+      },
+    })
     return () => window.removeEventListener('message', onMessage)
   }, [configuredParentOrigin, mode, sendToParent])
 
@@ -96,7 +102,11 @@ export function App() {
   }
 
   return (
-    <main className={`embed-app embed-app--${mode}`} ref={rootRef}>
+    <main
+      className={`embed-app embed-app--${mode}`}
+      data-input-available={typeof SharedArrayBuffer !== 'undefined'}
+      ref={rootRef}
+    >
       <GlPythonWorkspace
         project={project}
         activeFile={project.mainFile}

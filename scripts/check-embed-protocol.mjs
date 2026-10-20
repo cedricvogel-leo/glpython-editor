@@ -40,4 +40,11 @@ assert.equal(parseParentMessage({
   mode: 'unknown',
 }), null)
 
+const readyMessage = {
+  type: 'glpython:ready',
+  version: GLPYTHON_EMBED_PROTOCOL_VERSION,
+  capabilities: { input: false },
+}
+assert.equal(readyMessage.capabilities.input, false)
+
 console.log('Embed protocol checks passed.')
