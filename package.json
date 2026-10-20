@@ -19,8 +19,12 @@
   },
   "scripts": {
     "dev": "vite build --watch",
+    "dev:embed": "vite --config vite.embed.config.ts",
     "build": "tsc -b && vite build && cp src/style.css dist/style.css",
+    "build:embed": "tsc -b && vite build --config vite.embed.config.ts",
     "lint": "oxlint",
+    "preview:embed": "vite preview --config vite.embed.config.ts",
+    "test:protocol": "npm run build && node scripts/check-embed-protocol.mjs",
     "prepare": "npm run build"
   },
   "peerDependencies": {

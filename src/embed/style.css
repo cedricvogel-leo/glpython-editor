@@ -1,0 +1,40 @@
+:root {
+  color: #263a35;
+  background: #f4f1e9;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+  margin: 0;
+}
+
+.embed-app {
+  min-height: 560px;
+  padding: 12px;
+}
+
+.embed-app .glpython-workspace {
+  min-height: 536px;
+}
+
+.embed-configuration-error {
+  margin: 16px;
+  padding: 12px;
+  color: #8a3328;
+  background: #fff4f1;
+  border: 1px solid #e2b9b1;
+  border-radius: 6px;
+}
+
+@media (max-width: 760px) {
+  .embed-app {
+    padding: 8px;
+  }
+}

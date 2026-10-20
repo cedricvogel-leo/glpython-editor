@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>glpython embed protocol demo</title>
+    <style>
+      body { margin: 0; padding: 20px; color: #263a35; background: #ece9e0; font: 14px system-ui, sans-serif; }
+      .controls { display: flex; gap: 8px; margin-bottom: 12px; }
+      button { padding: 7px 12px; cursor: pointer; }
+      iframe { width: 100%; height: 620px; border: 1px solid #bbb; border-radius: 8px; background: white; }
+      pre { min-height: 32px; padding: 8px; background: #fff; }
+    </style>
+  </head>
+  <body>
+    <div class="controls">
+      <button type="button" data-mode="eval">Load eval example</button>
+      <button type="button" data-mode="turtle">Load turtle example</button>
+    </div>
+    <pre id="events" aria-live="polite">Waiting for the embed...</pre>
+    <iframe id="embed" title="glpython embed"></iframe>
+    <script type="module">
+      import { GLPYTHON_EMBED_PROTOCOL_VERSION } from '../src/embedProtocol'
+
+      const iframe = document.querySelector('#embed')
+      const events = document.querySelector('#events')
+      const sources = {
+        eval: 'for i in range(5):\n    print("Hello", "World #" + str(i))',
+        turtle: 'from gturtle import *\n\nmakeTurtle()\nfor _ in range(4):\n    forward(100)\n    right(90)',
+      }
+      let mode = 'eval'
+
+      const load = () => {
+        iframe.contentWindow?.postMessage({
+          type: 'glpython:load',
+          version: GLPYTHON_EMBED_PROTOCOL_VERSION,
+          source: sources[mode],
+          mode,
+        }, window.location.origin)
+      }
+
+      iframe.src = `./index.html?parentOrigin=${encodeURIComponent(window.location.origin)}&mode=${mode}`
+      document.querySelectorAll('[data-mode]').forEach((button) => {
+        button.addEventListener('click', () => {
+          mode = button.dataset.mode
+          load()
+        })
+      })
+      window.addEventListener('message', (event) => {
+        if (event.origin !== window.location.origin || event.source !== iframe.contentWindow) return
+        events.textContent = JSON.stringify(event.data, null, 2)
+        if (event.data?.type === 'glpython:ready') load()
+        if (event.data?.type === 'glpython:resize' && Number.isFinite(event.data.height)) {
+          iframe.style.height = `${Math.max(400, event.data.height)}px`
+        }
+      })
+    </script>
+  </body>
+</html>

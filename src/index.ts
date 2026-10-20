@@ -1,5 +1,22 @@
 export { GlPythonWorkspace } from './GlPythonWorkspace'
-export type { GlPythonWorkspaceProps, CoreStrings } from './GlPythonWorkspace'
+export type { GlPythonWorkspaceProps, CoreStrings, WorkspaceCapabilities } from './GlPythonWorkspace'
+
+export {
+  GLPYTHON_EMBED_PROTOCOL_VERSION,
+  GLPYTHON_MAX_SOURCE_LENGTH,
+  isEmbedMode,
+  parseParentMessage,
+  parseParentOrigin,
+} from './embedProtocol'
+export type {
+  EmbedMode,
+  GlPythonChildMessage,
+  GlPythonErrorMessage,
+  GlPythonLoadMessage,
+  GlPythonParentMessage,
+  GlPythonReadyMessage,
+  GlPythonResizeMessage,
+} from './embedProtocol'
 
 export type { Project, ProjectFile, ProjectFileKind } from './project'
 export {
