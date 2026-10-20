@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { GlPythonWorkspace } from '../GlPythonWorkspace'
+import { GlPythonWorkspace, type WorkspaceCommand } from '../GlPythonWorkspace'
 import {
   GLPYTHON_EMBED_PROTOCOL_VERSION,
   isEmbedMode,
@@ -42,6 +42,8 @@ export function App() {
   const [mode, setMode] = useState<EmbedMode>(modeFromLocation)
   const [project, setProject] = useState(() => createEmbedProject(defaultSource))
   const [isGraphicsOpen, setIsGraphicsOpen] = useState(mode === 'turtle')
+  const [command, setCommand] = useState<WorkspaceCommand | null>(null)
+  const commandIdRef = useRef(0)
   const rootRef = useRef<HTMLDivElement | null>(null)
 
   const sendToParent = useCallback((message: GlPythonChildMessage) => {
@@ -66,10 +68,23 @@ export function App() {
         return
       }
 
+      if (message.type === 'glpython:reset') {
+        setCommand({ id: ++commandIdRef.current, type: 'reset' })
+        return
+      }
+
       const nextMode = message.mode ?? mode
       setMode(nextMode)
       setIsGraphicsOpen(nextMode === 'turtle')
       setProject(createEmbedProject(message.source))
+      if (message.type === 'glpython:run' || message.type === 'glpython:visualize') {
+        setCommand({
+          id: ++commandIdRef.current,
+          type: message.type === 'glpython:run' ? 'run' : 'visualize',
+        })
+      } else {
+        setCommand(null)
+      }
     }
 
     window.addEventListener('message', onMessage)
@@ -110,6 +125,7 @@ export function App() {
       <GlPythonWorkspace
         key={mode}
         project={project}
+        command={command}
         activeFile={project.mainFile}
         openFiles={[project.mainFile]}
         onOpenFile={() => undefined}
@@ -120,6 +136,8 @@ export function App() {
         t={embedStrings}
         compact
         capabilities={{
+          actions: false,
+          editor: false,
           breadcrumbs: false,
           fileTabs: false,
           resetOutput: false,

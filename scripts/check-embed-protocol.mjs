@@ -23,6 +23,32 @@ assert.deepEqual(parseParentMessage({
   mode: 'eval',
 })
 
+for (const type of ['glpython:run', 'glpython:visualize']) {
+  assert.deepEqual(parseParentMessage({
+    type,
+    version: GLPYTHON_EMBED_PROTOCOL_VERSION,
+    source: 'print("current source")',
+    mode: 'eval',
+  }), {
+    type,
+    version: GLPYTHON_EMBED_PROTOCOL_VERSION,
+    source: 'print("current source")',
+    mode: 'eval',
+  })
+}
+
+assert.deepEqual(parseParentMessage({
+  type: 'glpython:reset',
+  version: GLPYTHON_EMBED_PROTOCOL_VERSION,
+}), {
+  type: 'glpython:reset',
+  version: GLPYTHON_EMBED_PROTOCOL_VERSION,
+})
+assert.equal(parseParentMessage({
+  type: 'glpython:run',
+  version: GLPYTHON_EMBED_PROTOCOL_VERSION,
+}), null)
+
 assert.equal(parseParentMessage({
   type: 'glpython:load',
   version: GLPYTHON_EMBED_PROTOCOL_VERSION + 1,

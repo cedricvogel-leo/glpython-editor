@@ -1,5 +1,5 @@
 export { GlPythonWorkspace } from './GlPythonWorkspace'
-export type { GlPythonWorkspaceProps, CoreStrings, WorkspaceCapabilities } from './GlPythonWorkspace'
+export type { GlPythonWorkspaceProps, CoreStrings, WorkspaceCapabilities, WorkspaceCommand } from './GlPythonWorkspace'
 
 export {
   GLPYTHON_EMBED_PROTOCOL_VERSION,
@@ -13,6 +13,10 @@ export type {
   GlPythonChildMessage,
   GlPythonErrorMessage,
   GlPythonLoadMessage,
+  GlPythonResetMessage,
+  GlPythonRunMessage,
+  GlPythonSourceMessage,
+  GlPythonVisualizeMessage,
   GlPythonParentMessage,
   GlPythonReadyMessage,
   GlPythonResizeMessage,

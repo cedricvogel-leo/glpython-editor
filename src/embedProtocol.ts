@@ -3,14 +3,27 @@ export const GLPYTHON_MAX_SOURCE_LENGTH = 500_000
 
 export type EmbedMode = 'eval' | 'turtle'
 
-export type GlPythonLoadMessage = {
-  type: 'glpython:load'
+export type GlPythonSourceMessage = {
+  type: 'glpython:load' | 'glpython:run' | 'glpython:visualize'
   version: typeof GLPYTHON_EMBED_PROTOCOL_VERSION
   source: string
   mode?: EmbedMode
 }
 
-export type GlPythonParentMessage = GlPythonLoadMessage
+export type GlPythonLoadMessage = GlPythonSourceMessage & { type: 'glpython:load' }
+export type GlPythonRunMessage = GlPythonSourceMessage & { type: 'glpython:run' }
+export type GlPythonVisualizeMessage = GlPythonSourceMessage & { type: 'glpython:visualize' }
+
+export type GlPythonResetMessage = {
+  type: 'glpython:reset'
+  version: typeof GLPYTHON_EMBED_PROTOCOL_VERSION
+}
+
+export type GlPythonParentMessage =
+  | GlPythonLoadMessage
+  | GlPythonRunMessage
+  | GlPythonVisualizeMessage
+  | GlPythonResetMessage
 
 export type GlPythonReadyMessage = {
   type: 'glpython:ready'
@@ -56,15 +69,16 @@ export function parseParentOrigin(value: string | null): string | null {
 
 export function parseParentMessage(value: unknown): GlPythonParentMessage | null {
   if (typeof value !== 'object' || value === null) return null
-  const message = value as Partial<GlPythonLoadMessage>
+  const message = value as Partial<GlPythonParentMessage> & { source?: unknown; mode?: unknown }
+  if (message.version !== GLPYTHON_EMBED_PROTOCOL_VERSION) return null
+  if (message.type === 'glpython:reset') return message as GlPythonResetMessage
   if (
-    message.type !== 'glpython:load'
-    || message.version !== GLPYTHON_EMBED_PROTOCOL_VERSION
+    (message.type !== 'glpython:load' && message.type !== 'glpython:run' && message.type !== 'glpython:visualize')
     || typeof message.source !== 'string'
     || message.source.length > GLPYTHON_MAX_SOURCE_LENGTH
     || (message.mode !== undefined && !isEmbedMode(message.mode))
   ) {
     return null
   }
-  return message as GlPythonLoadMessage
+  return message as GlPythonSourceMessage
 }

@@ -85,13 +85,18 @@ the workspace), so the host application controls localization.
 
 `GlPythonWorkspace` accepts optional `compact` and `capabilities` props. The
 existing behavior remains the default. A compact host can explicitly disable
-breadcrumbs, file tabs, output reset, visualization, or graphics:
+the editor, built-in action buttons, breadcrumbs, file tabs, output reset,
+visualization, or graphics. An editor-free host can send immutable `command`
+events to run or visualize a source snapshot supplied by its parent:
 
 ```tsx
 <GlPythonWorkspace
   {...props}
   compact
+  command={{ id: commandId, type: 'run' }}
   capabilities={{
+    actions: false,
+    editor: false,
     breadcrumbs: false,
     fileTabs: false,
     resetOutput: false,
@@ -119,14 +124,16 @@ origin that is allowed to communicate with it:
 https://example.test/embed/?parentOrigin=https%3A%2F%2Fcourse.example
 ```
 
-It sends `glpython:ready` with runtime capabilities, accepts a versioned
-`glpython:load` message, and sends `glpython:resize` as its content size
-changes. The public TypeScript types and validators are exported from
+It sends `glpython:ready` with runtime capabilities, accepts versioned
+`glpython:load`, `glpython:run`, `glpython:visualize`, and `glpython:reset`
+messages, and sends `glpython:resize` as its content size changes. `run` and
+`visualize` carry the current source snapshot so a parent such as LiaScript can
+remain the authoritative editor and restore its own PWA state. The public TypeScript types and validators are exported from
 `glpython-editor`.
 
 ```ts
 iframe.contentWindow?.postMessage({
-  type: 'glpython:load',
+  type: 'glpython:run',
   version: GLPYTHON_EMBED_PROTOCOL_VERSION,
   source: 'print("Hello")',
   mode: 'eval',
