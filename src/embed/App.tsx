@@ -108,6 +108,7 @@ export function App() {
       ref={rootRef}
     >
       <GlPythonWorkspace
+        key={mode}
         project={project}
         activeFile={project.mainFile}
         openFiles={[project.mainFile]}
