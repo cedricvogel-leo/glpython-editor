@@ -81,6 +81,60 @@ function Shell() {
 `t` must implement the `CoreStrings` interface (all UI strings used inside
 the workspace), so the host application controls localization.
 
+### Compact embeds
+
+`GlPythonWorkspace` accepts optional `compact` and `capabilities` props. The
+existing behavior remains the default. A compact host can explicitly disable
+breadcrumbs, file tabs, output reset, visualization, or graphics:
+
+```tsx
+<GlPythonWorkspace
+  {...props}
+  compact
+  capabilities={{
+    breadcrumbs: false,
+    fileTabs: false,
+    resetOutput: false,
+    visualization: true,
+    graphics: false,
+  }}
+/>
+```
+
+This repository also contains a standalone iframe application:
+
+```bash
+npm run dev:embed
+npm run build:embed
+npm run preview:embed
+```
+
+The built app is emitted to `dist-embed/`. `embed/demo.html` is a small parent
+page that exercises both the eval and turtle modes.
+
+The iframe requires a `parentOrigin` query parameter containing the exact
+origin that is allowed to communicate with it:
+
+```text
+https://example.test/embed/?parentOrigin=https%3A%2F%2Fcourse.example
+```
+
+It sends `glpython:ready`, accepts a versioned `glpython:load` message, and
+sends `glpython:resize` as its content size changes. The public TypeScript
+types and validators are exported from `glpython-editor`.
+
+```ts
+iframe.contentWindow?.postMessage({
+  type: 'glpython:load',
+  version: GLPYTHON_EMBED_PROTOCOL_VERSION,
+  source: 'print("Hello")',
+  mode: 'eval',
+}, iframeOrigin)
+```
+
+Use `mode: 'turtle'` for the graphics layout. The eval layout does not show or
+reserve space for turtle graphics.
+
 ## Development
 
 ```bash
@@ -92,6 +146,14 @@ npm run lint     # oxlint
 `npm run dev` runs `vite build --watch` for iterating against a locally
 linked copy (e.g. via `npm link` or a workspace/yalc setup) in a consuming
 shell project.
+
+The embed development and preview servers set
+`Cross-Origin-Opener-Policy: same-origin` and
+`Cross-Origin-Embedder-Policy: require-corp`. Production hosting must set
+equivalent headers for `SharedArrayBuffer` and `input()` support. Because
+cross-origin isolation is also affected by the top-level embedding page,
+`input()` must be tested in the actual course host; normal execution and
+visualization do not require the synchronous input channel.
 
 ## Notes on the build
 
