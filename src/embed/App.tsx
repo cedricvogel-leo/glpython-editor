@@ -43,6 +43,7 @@ export function App() {
   const [project, setProject] = useState(() => createEmbedProject(defaultSource))
   const [isGraphicsOpen, setIsGraphicsOpen] = useState(mode === 'turtle')
   const [command, setCommand] = useState<WorkspaceCommand | null>(null)
+  const [workspaceGeneration, setWorkspaceGeneration] = useState(0)
   const commandIdRef = useRef(0)
   const rootRef = useRef<HTMLDivElement | null>(null)
 
@@ -69,7 +70,8 @@ export function App() {
       }
 
       if (message.type === 'glpython:reset') {
-        setCommand({ id: ++commandIdRef.current, type: 'reset' })
+        setCommand(null)
+        setWorkspaceGeneration((generation) => generation + 1)
         return
       }
 
@@ -123,7 +125,7 @@ export function App() {
       ref={rootRef}
     >
       <GlPythonWorkspace
-        key={mode}
+        key={`${mode}:${workspaceGeneration}`}
         project={project}
         command={command}
         activeFile={project.mainFile}
