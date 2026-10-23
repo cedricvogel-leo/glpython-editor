@@ -22,6 +22,8 @@ export const embedStrings: CoreStrings = {
   visualizerError: (message) => `Visualization failed: ${message}`,
   visualizerTruncated: 'The trace was truncated.',
   visualizerCollapsedCalls: (count, call) => `… ${count} more calls${call ? ` of ${call}` : ''} …`,
+  replInputLabel: 'Python input',
+  replDefinitionHint: 'Definitions belong in the file.',
   visualizerNoLocals: 'No local variables',
   closeFile: (path) => `Close ${path}`,
   output: 'Output',
