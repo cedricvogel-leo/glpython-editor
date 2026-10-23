@@ -146,6 +146,7 @@ export function App() {
           resetOutput: false,
           visualization: mode !== 'turtle',
           graphics: mode === 'turtle',
+          repl: mode === 'eval',
         }}
       />
     </main>

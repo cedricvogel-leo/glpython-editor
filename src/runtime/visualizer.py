@@ -550,7 +550,7 @@ class _GlpythonFunction:
     self.def_path = _glpython_current_path
 
   def __call__(self, *args, **kwargs):
-    global _glpython_call_depth, _glpython_frame_id_counter, _glpython_pending_call_node, _glpython_last_call_frame_id
+    global _glpython_call_depth, _glpython_frame_id_counter, _glpython_pending_call_node, _glpython_last_call_frame_id, _glpython_current_path
     # Consumed immediately, before anything else can overwrite it - see the
     # comment on _glpython_pending_call_node above.
     call_node = _glpython_pending_call_node
@@ -612,12 +612,18 @@ class _GlpythonFunction:
             continue
           arg_sources.append(name)
         _glpython_record_call_enter(call_node, self, frame_id, parent_frame_id, _glpython_snapshot_locals(scope), param_annotations, arg_sources)
+      # The body's steps belong to the file the "def" lives in, which isn't
+      # the caller's file when e.g. a traced REPL input calls a function
+      # from main.py (the call-enter step above stays at the call site).
+      caller_path = _glpython_current_path
+      _glpython_current_path = self.def_path
       try:
         _glpython_exec_stmts(self.node.body, scope)
         return None
       except _GlpythonReturn as ret:
         return ret.value
       finally:
+        _glpython_current_path = caller_path
         _glpython_current_func_stack.pop()
         if call_node is not None:
           _glpython_frame_stack.pop()
@@ -1086,12 +1092,6 @@ class _GlpythonCapture:
   def getvalue(self):
     return "".join(self._chunks)
 
-# The exception's last traceback line, exactly as Python prints it (e.g.
-# "TypeError: unsupported operand type(s) for +: 'NoneType' and 'NoneType'").
-def _glpython_error_message(error):
-  text = str(error)
-  return f"{type(error).__name__}: {text}" if text else type(error).__name__
-
 # Appends one final "error" step at the node the exception was raised at
 # (see the error-site tagging in _glpython_eval), tagged with the frame it
 # was raised in - so the UI can step up to the failure, with every call box
@@ -1145,6 +1145,58 @@ def _glpython_learner_traceback(site, message, source_lines):
   return "\n".join(lines) + "\n"
 
 def _glpython_run_visual(main_path, file_paths_json):
+  sources = {}
+  for path in json.loads(file_paths_json):
+    with open("/" + path, "r", encoding="utf-8") as handle:
+      sources[path] = handle.read()
+  return _glpython_trace_program(main_path, sources, None)
+
+# Traces one REPL input as if it were a tiny main file, against the REPL's
+# namespace from the last Run - so "quadrat(a + 2)" sees the learner's "a"
+# and opens a call box for the file's own quadrat. `sources_json` holds the
+# files as they were at that Run (the editor may have changed since), which
+# is also what the UI must render the call boxes from. An input that doesn't
+# parse isn't traced at all: it reports its error line like a REPL input.
+def _glpython_run_visual_repl(source, sources_json):
+  try:
+    ast.parse(source, _GLPYTHON_REPL_PATH, "exec")
+  except SyntaxError as error:
+    return json.dumps({"replError": _glpython_error_message(error)})
+  sources = {path: code for path, code in json.loads(sources_json).items() if path.endswith(".py")}
+  sources[_GLPYTHON_REPL_PATH] = source
+  return _glpython_trace_program(_GLPYTHON_REPL_PATH, sources, _glpython_fill_scope_from_repl)
+
+# Fills the traced module scope from the REPL namespace. Functions the last
+# Run defined at the top level of one of the files are swapped for this
+# interpreter's own version of the same "def" node, so calling them is traced
+# step by step (anything else defined elsewhere stays an opaque callable).
+# Other values are deep-copied where possible, so the visualization is a dry
+# run that leaves the REPL's own lists etc. untouched.
+def _glpython_fill_scope_from_repl(scope, trees):
+  global _glpython_current_path
+  import copy
+  defs = {}
+  for path, tree in trees.items():
+    for node in tree.body:
+      if isinstance(node, ast.FunctionDef):
+        defs[("/" + path, node.name, node.lineno)] = (path, node)
+  for name, value in _glpython_repl_namespace.items():
+    if name == "__builtins__":
+      continue
+    if isinstance(value, _glpython_types.FunctionType):
+      found = defs.get((value.__code__.co_filename, value.__name__, value.__code__.co_firstlineno))
+      if found is not None:
+        # _GlpythonFunction takes the file its "def" lives in from here.
+        _glpython_current_path = found[0]
+        value = _GlpythonFunction(found[1], scope)
+    else:
+      try:
+        value = copy.deepcopy(value)
+      except Exception:
+        pass
+    scope.vars[name] = value
+
+def _glpython_trace_program(main_path, sources, fill_scope):
   global _glpython_trace_log, _glpython_step_count, _glpython_stdout_len, _glpython_graphics_commands
   global _glpython_module_scope, _glpython_current_path, _glpython_current_func_stack, _glpython_call_depth
   global _glpython_frame_id_counter, _glpython_frame_stack, _glpython_pending_call_node, _glpython_last_call_frame_id
@@ -1161,16 +1213,13 @@ def _glpython_run_visual(main_path, file_paths_json):
   if "/" not in sys.path:
     sys.path.insert(0, "/")
 
-  file_paths = json.loads(file_paths_json)
   ast_by_file = {}
   trees = {}
   source_lines = {}
   counter = [0]
-  for path in file_paths:
+  for path, source in sources.items():
+    source_lines[path] = source.splitlines()
     try:
-      with open("/" + path, "r", encoding="utf-8") as handle:
-        source = handle.read()
-      source_lines[path] = source.splitlines()
       tree = ast.parse(source, filename=path)
       _glpython_preprocess(tree, source, counter)
       trees[path] = tree
@@ -1197,9 +1246,11 @@ def _glpython_run_visual(main_path, file_paths_json):
   error_message = None
   truncated = False
   try:
-    _glpython_current_path = main_path
     module_vars = {"__name__": "__main__", "__file__": main_path}
     _glpython_module_scope = _GlpythonScope(module_vars, parent=None, kind="module")
+    if fill_scope is not None:
+      fill_scope(_glpython_module_scope, trees)
+    _glpython_current_path = main_path
     main_tree = trees.get(main_path)
     try:
       if main_tree is None:

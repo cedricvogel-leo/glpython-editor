@@ -98,6 +98,20 @@ Deep chains of open calls, such as a recursion without a base case, collapse
 their middle boxes into one "… N more calls of f(x) …" marker
 (`visualizerCollapsedCalls`), so the layout stays usable.
 
+### REPL
+
+Below the output panel, a `>>>` input line runs Python in the namespace of the
+last Run, so learners can call the file's functions directly. An expression
+shows its value (`None` too, greyed out); a statement such as `a = 5` shows
+nothing; a `def` runs but adds the hint `replDefinitionHint`; an error shows
+Python's last traceback line. Run starts a fresh namespace and clears the
+transcript, while arrow up/down still recalls earlier inputs. The input line's
+**Visualize** button traces that input step by step against the same namespace,
+as a dry run that leaves the namespace unchanged, with call boxes drawn from
+the file as it was at the last Run. Disable the REPL with
+`capabilities={{ repl: false }}`; the embed shows it in `eval` mode only, and
+resetting the embed discards the namespace.
+
 ### Compact embeds
 
 `GlPythonWorkspace` accepts optional `compact` and `capabilities` props. The

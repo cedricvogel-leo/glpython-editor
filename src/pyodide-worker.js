@@ -5,6 +5,11 @@ import visualizerRuntime from './runtime/visualizer.py?raw'
 
 let pyodideReadyPromise
 let mountedFiles = []
+// The project files as of the last Run - the REPL namespace was built from
+// them, so a visualized REPL input must render its call boxes from these
+// rather than from whatever the editor holds now.
+let lastRunFiles = {}
+const REPL_PATH = '<repl>'
 let inputControl = null
 let inputPayload = null
 const INPUT_CANCELLED_MARKER = '__GLPYTHON_INPUT_CANCELLED__'
@@ -105,6 +110,7 @@ self.onmessage = async (event) => {
     try {
       const pyodide = await getPyodide()
       await mountProjectFiles(pyodide, event.data.project.files)
+      lastRunFiles = event.data.project.files
       let output = ''
       pyodide.setStdout({ batched: (text) => { output += `${text}\n` } })
       pyodide.setStderr({ batched: (text) => { output += `${text}\n` } })
@@ -113,6 +119,38 @@ self.onmessage = async (event) => {
       self.postMessage({ type: 'result', output: output.trim(), graphics: JSON.parse(String(graphicsJson)) })
     } catch (error) {
       self.postMessage({ type: 'error', output: String(error) })
+    }
+    return
+  }
+
+  if (event.data.type === 'repl') {
+    let output = ''
+    try {
+      const pyodide = await getPyodide()
+      pyodide.setStdout({ batched: (text) => { output += `${text}\n` } })
+      pyodide.setStderr({ batched: (text) => { output += `${text}\n` } })
+      const result = JSON.parse(String(callPython(pyodide, '_glpython_repl', event.data.source)))
+      const graphicsJson = callPython(pyodide, '_glpython_graphics_json')
+      self.postMessage({ type: 'repl-result', id: event.data.id, output, graphics: JSON.parse(String(graphicsJson)), ...result })
+    } catch (error) {
+      self.postMessage({ type: 'repl-result', id: event.data.id, output, error: String(error) })
+    }
+    return
+  }
+
+  if (event.data.type === 'run-visual-repl') {
+    try {
+      const pyodide = await getPyodide()
+      // Nothing may have been run or visualized yet in this worker.
+      if (!pyodide.FS.analyzePath('/gturtle.py').exists) pyodide.FS.writeFile('/gturtle.py', turtleModule)
+      const result = JSON.parse(String(callPython(pyodide, '_glpython_run_visual_repl', event.data.source, JSON.stringify(lastRunFiles))))
+      if ('replError' in result) {
+        self.postMessage({ type: 'repl-result', id: event.data.id, output: '', error: result.replError })
+        return
+      }
+      self.postMessage({ type: 'trace-result', ...result, rootPath: REPL_PATH, sources: { ...lastRunFiles, [REPL_PATH]: event.data.source } })
+    } catch (error) {
+      self.postMessage({ type: 'trace-result', trace: [], ast: {}, output: '', graphics: [], error: String(error), truncated: false })
     }
     return
   }
