@@ -136,7 +136,9 @@ function buildLineSegments(
   // substitution instead of just "the nearest one on this line" (see
   // nextStepReturnFlight's use of it further down).
   highlights: Array<{ start: number; end: number; nodeId?: number }>,
-  annotationHighlights: Array<{ start: number; end: number; nodeId?: number }>,
+  // `param` marks a call box's "=value" next to a parameter name in its
+  // header, which is styled more prominently than a loop variable's.
+  annotationHighlights: Array<{ start: number; end: number; nodeId?: number; param?: boolean }>,
   childRanges: Array<{ start: number; end: number; frame: OpenFrame }>,
   nextStepRanges: Array<{ start: number; end: number }>,
   // The same box-drawing is reused for the failing node at an 'error' step
@@ -166,7 +168,7 @@ function buildLineSegments(
     if (insideChild(h.start, h.end)) continue
     const start = Math.max(h.start, lineStart)
     const end = Math.min(h.end, lineEnd)
-    if (start < end) marks.push({ start: start - lineStart, end: end - lineStart, className: 'visual-loop-annotation', annotationNodeId: h.nodeId })
+    if (start < end) marks.push({ start: start - lineStart, end: end - lineStart, className: h.param ? 'visual-param-annotation' : 'visual-loop-annotation', annotationNodeId: h.nodeId })
   }
   for (const c of childRanges) {
     const start = Math.max(c.start, lineStart)
@@ -326,6 +328,7 @@ function Frame({ frameId, path, scope, openFrames, nodeIndexByFile, visualSource
   const annotations = new Map(buildAnnotationsUpTo(trace, uptoStep, frameId).get(path) ?? [])
   const openFrame = frameId !== 0 ? openFrames.get(frameId) : undefined
   if (openFrame) for (const [nodeId, text] of openFrame.paramAnnotations) annotations.set(nodeId, text)
+  const paramNodeIds = new Set(openFrame?.paramAnnotations.map(([nodeId]) => nodeId))
 
   const rendered = renderFrameSource(source, lineOffsets, nodeIndex, clipRange, substitutions, annotations)
   if (!rendered) return null
@@ -387,6 +390,7 @@ function Frame({ frameId, path, scope, openFrames, nodeIndexByFile, visualSource
     : []
 
   const isModule = scope.kind === 'module'
+  const annotationHighlights = rendered.annotationHighlights.map((h) => ({ ...h, param: h.nodeId !== undefined && paramNodeIds.has(h.nodeId) }))
   const lines = rendered.text.split('\n')
   let cursor = 0
   const localEntries: Array<[string, string | null]> = Object.entries(buildLocalsUpTo(trace, uptoStep, frameId))
@@ -411,8 +415,8 @@ function Frame({ frameId, path, scope, openFrames, nodeIndexByFile, visualSource
           const isErrorLine = isCurrentLine && isErrorFrame
           const lineStateClass = isErrorLine ? ' visual-current-line visual-error-line' : isCurrentLine ? ' visual-current-line' : isExecutedLine ? ' visual-executed-line' : ''
           const segments = errorRanges.length > 0
-            ? buildLineSegments(line, lineStart, rendered.highlights, rendered.annotationHighlights, childRanges, errorRanges, 'visual-error-node')
-            : buildLineSegments(line, lineStart, rendered.highlights, rendered.annotationHighlights, childRanges, nextStepRanges)
+            ? buildLineSegments(line, lineStart, rendered.highlights, annotationHighlights, childRanges, errorRanges, 'visual-error-node')
+            : buildLineSegments(line, lineStart, rendered.highlights, annotationHighlights, childRanges, nextStepRanges)
           const childFrameProps = { openFrames, nodeIndexByFile, visualSources, trace, uptoStep, currentStep, nextStep, monaco, noLocalsLabel, declareTarget, pendingCallLocals, errorStep, collapsedCalls, collapsedCallsLabel }
           const content = segments.map((segment, segmentIndex) => segment.kind === 'child' && collapsedCalls?.firstHiddenFrameId === segment.frame.frameId ? (
             <span key={segmentIndex} className="frame-child-zone">
@@ -495,6 +499,15 @@ function Frame({ frameId, path, scope, openFrames, nodeIndexByFile, visualSource
       </div>
     </div>
   )
+}
+
+// A box's horizontal position within the visualizer canvas, from layout
+// offsets rather than getBoundingClientRect: a box that just opened is still
+// scaled down by its "visual-frame-grow" animation when it's measured.
+function canvasOffsetLeft(element: HTMLElement, canvas: HTMLElement): number {
+  let left = 0
+  for (let node: HTMLElement | null = element; node && node !== canvas; node = node.offsetParent as HTMLElement | null) left += node.offsetLeft
+  return left
 }
 
 function ReplTranscriptEntry({ entry, definitionHint }: { entry: ReplEntry; definitionHint: string }) {
@@ -1259,11 +1272,40 @@ function GlPythonWorkspace(props: GlPythonWorkspaceProps) {
   // bugs. 'nearest' avoids jumping the view around on every single step,
   // only scrolling when the active line would otherwise leave the
   // viewport (e.g. stepping into/out of a deeply nested call).
+  //
+  // Horizontally, nested call boxes can be wider than the view (each one
+  // sits at its call site, indented by the code before it), so it instead
+  // follows the box the current step runs in: that box is scrolled fully
+  // into view, outer boxes may slide off to the left, and if the box doesn't
+  // fit (e.g. it already holds the next call's box) the innermost box wins.
+  // Only steps scroll, so the learner can still scroll around in between.
   useEffect(() => {
     if (!isVisualizing) return
     const container = visualizerScrollRef.current
-    const activeLine = container?.querySelector('.visual-current-line')
-    activeLine?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    const canvas = visualizerCanvasRef.current
+    const root = canvas?.querySelector<HTMLElement>('.frame-box--root')
+    if (!container || !canvas || !root) return
+    const previousScrollLeft = container.scrollLeft
+    container.querySelector('.visual-current-line')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    container.scrollLeft = previousScrollLeft
+
+    const frameId = currentTraceStep?.frameId ?? 0
+    const active = frameId === 0 ? root : root.querySelector<HTMLElement>(`.frame-box[data-frame-id="${frameId}"]`) ?? root
+    // Open boxes form one chain, so there's at most one box without boxes inside.
+    const innermost = [...root.querySelectorAll<HTMLElement>('.frame-box')].find((box) => !box.querySelector('.frame-box')) ?? null
+    const span = (box: HTMLElement) => {
+      const left = canvasOffsetLeft(box, canvas)
+      return { left, right: left + box.offsetWidth }
+    }
+    const margin = 12
+    const room = container.clientWidth - 2 * margin
+    let target = active !== root ? span(active) : innermost ? span(innermost) : { left: 0, right: 0 }
+    if (target.right - target.left > room && innermost) target = span(innermost)
+    if (target.right - target.left > room) target = { left: target.left, right: target.left + room }
+    let next = container.scrollLeft
+    if (target.left - margin < next) next = target.left - margin
+    else if (target.right + margin > next + container.clientWidth) next = target.right + margin - container.clientWidth
+    container.scrollTo({ left: Math.max(0, next), behavior: animationsEnabledRef.current ? 'smooth' : 'auto' })
   }, [isVisualizing, currentTraceStep])
 
   // Auto-play: advance one step every 500ms while playing, stopping at the
