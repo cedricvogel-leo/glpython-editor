@@ -80,6 +80,23 @@ function Shell() {
 
 `t` must implement the `CoreStrings` interface (all UI strings used inside
 the workspace), so the host application controls localization.
+`visualizerCollapsedCalls` is optional; without it, an English fallback is
+used.
+
+### Visualizing failing programs
+
+When a program raises an exception, the visualizer still shows every step up
+to the failure. The trace ends in one `error` step at the expression that
+raised, in the call frame it was raised in. It still starts before the first
+step; a red marker on the scrubber shows where the failure is. At that step the
+expression is marked red with Python's untranslated last traceback line below
+it, and the output panel shows a traceback of the learner's own lines.
+`TraceResult` carries that traceback as `error` and its last line as
+`errorMessage`. A `SyntaxError` produces no steps and keeps the warning banner.
+
+Deep chains of open calls, such as a recursion without a base case, collapse
+their middle boxes into one "… N more calls of f(x) …" marker
+(`visualizerCollapsedCalls`), so the layout stays usable.
 
 ### Compact embeds
 
