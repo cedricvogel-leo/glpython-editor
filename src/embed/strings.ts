@@ -21,6 +21,7 @@ export const embedStrings: CoreStrings = {
   visualizerAnimate: 'Animate',
   visualizerError: (message) => `Visualization failed: ${message}`,
   visualizerTruncated: 'The trace was truncated.',
+  visualizerCollapsedCalls: (count, call) => `… ${count} more calls${call ? ` of ${call}` : ''} …`,
   visualizerNoLocals: 'No local variables',
   closeFile: (path) => `Close ${path}`,
   output: 'Output',

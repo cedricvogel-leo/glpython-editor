@@ -1,10 +1,10 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import Editor, { useMonaco } from '@monaco-editor/react'
 import type { Monaco } from '@monaco-editor/react'
 import { AlertTriangle, BookOpen, FileCode2, PanelRightClose, PanelRightOpen, Pause, Play, RotateCcw, SkipBack, SkipForward, Sparkles, SquareTerminal, Terminal, Workflow, X } from 'lucide-react'
 import { projectImportsGturtle, type Project } from './project'
 import { GraphicsWindow, type TurtleCommand } from './GraphicsWindow'
-import { buildAnnotationsUpTo, buildExecutedLinesUpTo, buildLocalsUpTo, buildSubstitutionsUpTo, computeLineOffsets, computeOpenFramesUpTo, indexAstNodes, lineNumberAtOffset, locateNodeRenderedRange, nodeRange, renderFrameSource, type AstNode, type OpenFrame, type TraceResult, type TraceStep } from './visualizer'
+import { buildAnnotationsUpTo, buildExecutedLinesUpTo, buildLocalsUpTo, buildSubstitutionsUpTo, collapseDeepCallChain, computeLineOffsets, computeOpenFramesUpTo, indexAstNodes, lineNumberAtOffset, locateNodeRenderedRange, nodeRange, renderFrameSource, type AstNode, type CollapsedCalls, type OpenFrame, type TraceResult, type TraceStep } from './visualizer'
 import { tokenizePythonFragment } from './pyHighlight'
 
 type CoreStrings = {
@@ -28,6 +28,11 @@ type CoreStrings = {
   visualizerAnimate: string
   visualizerError: (message: string) => string
   visualizerTruncated: string
+  // Marker replacing the middle of a deep chain of call boxes, e.g.
+  // "… 158 more calls of loop(3) …"; `call` is null when the hidden calls
+  // are to different functions. Optional so existing hosts keep compiling -
+  // an English fallback is used when it's missing.
+  visualizerCollapsedCalls?: (count: number, call: string | null) => string
   visualizerNoLocals: string
   closeFile: (path: string) => string
   output: string
@@ -116,6 +121,9 @@ function buildLineSegments(
   annotationHighlights: Array<{ start: number; end: number; nodeId?: number }>,
   childRanges: Array<{ start: number; end: number; frame: OpenFrame }>,
   nextStepRanges: Array<{ start: number; end: number }>,
+  // The same box-drawing is reused for the failing node at an 'error' step
+  // (which has no next step), just with its own class.
+  nextStepClassName = 'visual-next-step',
 ): LineSegment[] {
   const lineEnd = lineStart + line.length
   // A child's own call-site range replaces its text wholesale, so any
@@ -207,9 +215,9 @@ function buildLineSegments(
     if (mark.frame) {
       segments.push({ kind: 'child', frame: mark.frame })
     } else if (mark.parts) {
-      segments.push({ kind: 'group', className: 'visual-next-step', parts: mark.parts.map((p) => ({ text: line.slice(p.start, p.end), className: p.className, annotationNodeId: p.annotationNodeId })) })
+      segments.push({ kind: 'group', className: nextStepClassName, parts: mark.parts.map((p) => ({ text: line.slice(p.start, p.end), className: p.className, annotationNodeId: p.annotationNodeId })) })
     } else {
-      const className = mark.nextStep ? (mark.className ? `${mark.className} visual-next-step` : 'visual-next-step') : mark.className
+      const className = mark.nextStep ? (mark.className ? `${mark.className} ${nextStepClassName}` : nextStepClassName) : mark.className
       segments.push({ kind: 'text', text: line.slice(mark.start, mark.end), className, annotationNodeId: mark.annotationNodeId })
     }
     cursor2 = mark.end
@@ -260,6 +268,13 @@ type FrameProps = {
   // `framesForRender`/`nextStepPendingCall`), so an arrow can point from
   // each argument's value at the call site into its own placeholder row.
   pendingCallLocals: { frameId: number; paramNames: string[] } | null
+  // The trace's final 'error' step, only while it's the current step: its
+  // node is marked red in its frame, with the message right below that line.
+  errorStep: TraceStep | null
+  // See collapseDeepCallChain - where the middle of a deep chain of boxes is
+  // replaced by a marker, and the marker's text.
+  collapsedCalls: CollapsedCalls | null
+  collapsedCallsLabel: string
 }
 
 // Renders one frame of execution - either the outermost module/global scope
@@ -274,7 +289,7 @@ type FrameProps = {
 // frame's body renders its own Frame recursively, inline, right at its own
 // call site - real DOM in normal flow, so surrounding text/lines reflow
 // automatically.
-function Frame({ frameId, path, scope, openFrames, nodeIndexByFile, visualSources, trace, uptoStep, currentStep, nextStep, monaco, noLocalsLabel, declareTarget, pendingCallLocals }: FrameProps) {
+function Frame({ frameId, path, scope, openFrames, nodeIndexByFile, visualSources, trace, uptoStep, currentStep, nextStep, monaco, noLocalsLabel, declareTarget, pendingCallLocals, errorStep, collapsedCalls, collapsedCallsLabel }: FrameProps) {
   const nodeIndex = nodeIndexByFile.get(path)
   const source = visualSources[path]
   if (!nodeIndex || source === undefined) return null
@@ -342,6 +357,17 @@ function Frame({ frameId, path, scope, openFrames, nodeIndexByFile, visualSource
       })()
     : []
 
+  const isErrorFrame = errorStep !== null && errorStep.frameId === frameId && errorStep.path === path
+  const errorRanges = isErrorFrame
+    ? (() => {
+        const errorNode = nodeIndex.get(errorStep.nodeId)
+        if (!errorNode) return []
+        const range = locateNodeRenderedRange(lineOffsets, nodeIndex, substitutions, annotations, errorNode)
+        if (!range) return []
+        return [{ start: range.start - clipStart, end: range.end - clipStart }]
+      })()
+    : []
+
   const isModule = scope.kind === 'module'
   const lines = rendered.text.split('\n')
   let cursor = 0
@@ -364,9 +390,26 @@ function Frame({ frameId, path, scope, openFrames, nodeIndexByFile, visualSource
           const absoluteLine = startLine + index
           const isCurrentLine = isFrameActive && currentStep?.line === absoluteLine
           const isExecutedLine = !isCurrentLine && executedLines?.has(absoluteLine) === true
-          const lineStateClass = isCurrentLine ? ' visual-current-line' : isExecutedLine ? ' visual-executed-line' : ''
-          const segments = buildLineSegments(line, lineStart, rendered.highlights, rendered.annotationHighlights, childRanges, nextStepRanges)
-          const content = segments.map((segment, segmentIndex) => segment.kind === 'child' ? (
+          const isErrorLine = isCurrentLine && isErrorFrame
+          const lineStateClass = isErrorLine ? ' visual-current-line visual-error-line' : isCurrentLine ? ' visual-current-line' : isExecutedLine ? ' visual-executed-line' : ''
+          const segments = errorRanges.length > 0
+            ? buildLineSegments(line, lineStart, rendered.highlights, rendered.annotationHighlights, childRanges, errorRanges, 'visual-error-node')
+            : buildLineSegments(line, lineStart, rendered.highlights, rendered.annotationHighlights, childRanges, nextStepRanges)
+          const childFrameProps = { openFrames, nodeIndexByFile, visualSources, trace, uptoStep, currentStep, nextStep, monaco, noLocalsLabel, declareTarget, pendingCallLocals, errorStep, collapsedCalls, collapsedCallsLabel }
+          const content = segments.map((segment, segmentIndex) => segment.kind === 'child' && collapsedCalls?.firstHiddenFrameId === segment.frame.frameId ? (
+            <span key={segmentIndex} className="frame-child-zone">
+              <span className="frame-collapsed-calls">
+                <span className="frame-collapsed-calls-label">{collapsedCallsLabel}</span>
+                <Frame
+                  key={collapsedCalls.resumeFrame.frameId}
+                  frameId={collapsedCalls.resumeFrame.frameId}
+                  path={collapsedCalls.resumeFrame.funcDefPath}
+                  scope={{ kind: 'call', funcDefNodeId: collapsedCalls.resumeFrame.funcDefNodeId }}
+                  {...childFrameProps}
+                />
+              </span>
+            </span>
+          ) : segment.kind === 'child' ? (
             <span key={segmentIndex} className="frame-child-zone">
               <Frame
                 frameId={segment.frame.frameId}
@@ -383,6 +426,9 @@ function Frame({ frameId, path, scope, openFrames, nodeIndexByFile, visualSource
                 noLocalsLabel={noLocalsLabel}
                 declareTarget={declareTarget}
                 pendingCallLocals={pendingCallLocals}
+                errorStep={errorStep}
+                collapsedCalls={collapsedCalls}
+                collapsedCallsLabel={collapsedCallsLabel}
               />
             </span>
           ) : segment.kind === 'group' ? (
@@ -399,15 +445,28 @@ function Frame({ frameId, path, scope, openFrames, nodeIndexByFile, visualSource
           // fixed-height column) so it still lines up correctly even when
           // an embedded nested frame makes that one logical line visually
           // taller than a plain line of text.
+          // Python's own message for the failing node, directly below the
+          // last line of that node.
+          const errorMessage = isErrorFrame && errorStep.endLine === absoluteLine
+            ? <div className="visual-error-message" role="alert">{errorStep.label}</div>
+            : null
           if (isModule) {
             return (
-              <div className={`frame-line-row${lineStateClass}`} key={index}>
-                <span className="frame-gutter-num">{absoluteLine}</span>
-                <div className={`frame-line${lineStateClass}`}>{content}</div>
-              </div>
+              <Fragment key={index}>
+                <div className={`frame-line-row${lineStateClass}`}>
+                  <span className="frame-gutter-num">{absoluteLine}</span>
+                  <div className={`frame-line${lineStateClass}`}>{content}</div>
+                </div>
+                {errorMessage && <div className="frame-line-row"><span className="frame-gutter-num" />{errorMessage}</div>}
+              </Fragment>
             )
           }
-          return <div key={index} className={`frame-line${lineStateClass}`}>{content}</div>
+          return (
+            <Fragment key={index}>
+              <div className={`frame-line${lineStateClass}`}>{content}</div>
+              {errorMessage}
+            </Fragment>
+          )
         })}
       </div>
       <div className="frame-divider" />
@@ -574,6 +633,13 @@ function GlPythonWorkspace(props: GlPythonWorkspaceProps) {
   // via highlighting its AST span, including before any step has run yet
   // (clampedStepIndex === -1), so the very first statement is shown too.
   const nextTraceStep = visualTraceSteps[clampedStepIndex + 1] ?? null
+  // A run that failed ends in one 'error' step (see TraceStepKind). The
+  // visualizer still starts before the first step, so learners step towards
+  // the failure; the scrubber marks where it is.
+  const lastTraceStep = visualTraceSteps[visualTraceSteps.length - 1]
+  const errorTraceStep = lastTraceStep?.kind === 'error' ? lastTraceStep : null
+  const isAtErrorStep = errorTraceStep !== null && currentTraceStep === errorTraceStep
+  const visualStdout = visualTrace?.output.slice(0, currentTraceStep?.stdoutLen ?? 0) ?? ''
 
   const astIndexByFile = useMemo(() => {
     const map = new Map<string, ReturnType<typeof indexAstNodes>>()
@@ -790,6 +856,12 @@ function GlPythonWorkspace(props: GlPythonWorkspaceProps) {
   const pendingCallLocals = useMemo(() => nextStepPendingCall
     ? { frameId: nextStepPendingCall.openFrame.frameId, paramNames: nextStepPendingCall.argSources }
     : null, [nextStepPendingCall])
+
+  const collapsedCalls = useMemo(() => collapseDeepCallChain(framesForRender, nextStepPendingCall ? 2 : 1), [framesForRender, nextStepPendingCall])
+  const collapsedCallsLabel = collapsedCalls
+    ? t.visualizerCollapsedCalls?.(collapsedCalls.hiddenCount, collapsedCalls.callText)
+      ?? `\u2026 ${collapsedCalls.hiddenCount} more calls${collapsedCalls.callText ? ` of ${collapsedCalls.callText}` : ''} \u2026`
+    : ''
 
   useLayoutEffect(() => {
     const canvas = visualizerCanvasRef.current
@@ -1118,7 +1190,7 @@ function GlPythonWorkspace(props: GlPythonWorkspaceProps) {
 
   return (
     <div className={workspaceClassName}>
-              <div className="main-split"><div className="editor-column"><div className="editor-header"><div className="breadcrumbs"><span>{project.name}</span><span>/</span><strong>{selectedFile.path}</strong></div><div className="editor-actions">{isVisualizing ? workspaceCapabilities.exitVisualizer ? <button className="secondary-button" onClick={exitVisualizer}><X size={15} /> {t.exitVisualizer}</button> : null : workspaceCapabilities.actions ? <><button className="secondary-button" onClick={() => setOutput(t.readyOutput)}><RotateCcw size={15} /> {t.resetOutput}</button><button className="secondary-button" onClick={runVisualize} disabled={isRunning || isVisualizerLoading}><Workflow size={15} /> {isVisualizerLoading ? t.visualizing : t.visualize}</button><button className="run-button" onClick={runCode} disabled={isRunning}><Play size={15} fill="currentColor" /> {isRunning ? t.running : t.runProject}</button></> : null}</div></div>{isVisualizing && <div className="visualizer-bar"><div className="visualizer-title"><Workflow size={15} /><span>{t.visualizerTitle}</span></div>{visualTraceSteps.length > 0 ? <><span className="visualizer-step-count">{clampedStepIndex === -1 ? t.visualizerBeforeStart : t.visualizerStepOf(clampedStepIndex + 1, visualTraceSteps.length)}</span><input className="visualizer-scrubber" type="range" min={-1} max={Math.max(0, visualTraceSteps.length - 1)} value={clampedStepIndex} onChange={(event) => { setIsVisualPlaying(false); setVisualStepIndex(Number(event.target.value)) }} /><div className="visualizer-controls"><button className="icon-button small" aria-label={t.visualizerRestart} onClick={visualRestart}><RotateCcw size={15} /></button><button className="icon-button small" aria-label={t.visualizerPrevStep} onClick={visualStepBack} disabled={clampedStepIndex === -1}><SkipBack size={15} /></button><button className="icon-button small" aria-label={isVisualPlaying ? t.visualizerPause : t.visualizerPlay} onClick={visualTogglePlay}>{isVisualPlaying ? <Pause size={15} /> : <Play size={15} />}</button><button className="icon-button small" aria-label={t.visualizerNextStep} onClick={visualStepForward} disabled={clampedStepIndex >= visualTraceSteps.length - 1}><SkipForward size={15} /></button></div></> : <span className="visualizer-step-count">{t.visualizerNoSteps}</span>}<label className="visualizer-animate-toggle"><input type="checkbox" checked={animationsEnabled} onChange={(event) => setAnimationsEnabled(event.target.checked)} /> {t.visualizerAnimate}</label></div>}{isVisualizing && (visualTrace?.truncated || visualTrace?.error) && <div className="visualizer-warning"><AlertTriangle size={14} />{visualTrace?.error ? t.visualizerError(visualTrace.error) : t.visualizerTruncated}</div>}{(workspaceCapabilities.editor || isVisualizing) && <section className="editor-panel"><div className="editor-tabs">{openFiles.map((path) => { const file = project.files[path]; return <button className={`editor-tab ${activeFile === path ? 'active' : ''}`} key={path} onClick={() => onOpenFile(path)}><span className={`tab-file-icon ${file.kind === 'python' ? 'python' : 'notes'}`}>{file.kind === 'python' ? <FileCode2 size={14} /> : <BookOpen size={14} />}</span><span>{file.path}</span><span className="tab-close" role="button" aria-label={t.closeFile(file.path)} onClick={(event) => { event.stopPropagation(); onCloseFile(path) }}><X size={13} /></span></button> })}</div><div className="editor-wrap">{isVisualizing ? <div className={`visualizer-view${animationsEnabled ? ' visualizer-animated' : ''}`} ref={visualizerScrollRef}><div className="visualizer-canvas" ref={visualizerCanvasRef}><Frame frameId={0} path={activeFile} scope={{ kind: 'module' }} openFrames={framesForRender} nodeIndexByFile={astIndexByFile} visualSources={visualSources} trace={visualTrace?.trace ?? []} uptoStep={currentTraceStep?.step ?? -1} currentStep={currentTraceStep} nextStep={nextTraceStep} monaco={monaco} noLocalsLabel={t.visualizerNoLocals} declareTarget={nextStepDeclareTarget} pendingCallLocals={pendingCallLocals} />{animationsEnabled && closingBoxes.length > 0 && <div className="visualizer-closing-boxes">{closingBoxes.map((box) => <div key={box.id} className="visual-closing-box-ghost" style={{ left: box.left, top: box.top, width: box.width, height: box.height }} dangerouslySetInnerHTML={{ __html: box.html }} />)}</div>}{(connectorPaths.length > 0 || flights.length > 0) && <svg className="visualizer-connectors"><defs><marker id="visualizer-arrowhead" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" /></marker></defs>{connectorPaths.map((connector, index) => <path key={index} d={connector.d} markerEnd="url(#visualizer-arrowhead)" />)}{animationsEnabled && flights.map((flight) => <path key={`flight-${flight.id}`} className="visual-flight-arrow" d={flight.d} markerEnd="url(#visualizer-arrowhead)" />)}</svg>}{animationsEnabled && flights.length > 0 && <div className="visualizer-flights">{flights.map((flight) => <span key={flight.id} className="visual-flight-value" style={{ offsetPath: `path('${flight.d}')` }}>{flight.value}</span>)}</div>}</div></div> : <Editor key="normal-editor" height="100%" language={selectedFile.kind === 'python' ? 'python' : 'markdown'} theme="vs-dark" value={selectedFile.code} onChange={updateCode} options={{ minimap: { enabled: false }, fontSize: 15, lineHeight: 24, padding: { top: 22 }, fontFamily: "'JetBrains Mono', monospace", scrollBeyondLastLine: false, smoothScrolling: true, automaticLayout: true, tabSize: 4, insertSpaces: true, detectIndentation: false }} />}</div></section>}<section className="output-panel"><div className="output-heading"><div className="output-title"><SquareTerminal size={16} /><span>{t.output}</span><span className="runtime-badge"><span className="pulse" /> {t.pyodideRuntime}</span></div><span className="output-hint">{t.runsFile(project.mainFile)}</span></div><pre>{isVisualizing ? (visualTrace?.output.slice(0, currentTraceStep?.stdoutLen ?? 0) || t.noOutput) : output}</pre></section></div>{isGraphicsOpen ? <aside className="graphics-panel"><div className="output-heading"><div className="output-title"><Sparkles size={16} /><span>{t.turtleGraphics}</span>{graphics.length > 0 && <span className="runtime-badge"><span className="pulse" /> {t.gturtleWindow}</span>}</div><button className="icon-button small" aria-label={t.collapseGraphics} onClick={() => onGraphicsOpenChange(false)}><PanelRightClose size={15} /></button></div>{(isVisualizing ? (visualTrace?.graphics.slice(0, currentTraceStep?.graphicsLen ?? 0) as TurtleCommand[] ?? []) : graphics).length > 0 ? <GraphicsWindow commands={isVisualizing ? (visualTrace?.graphics.slice(0, currentTraceStep?.graphicsLen ?? 0) as TurtleCommand[] ?? []) : graphics} /> : <p className="graphics-empty">{t.graphicsEmptyBefore} <code>gturtle</code> {t.graphicsEmptyAfter}</p>}</aside> : <button className="graphics-collapsed-toggle" aria-label={t.expandGraphics} onClick={() => onGraphicsOpenChange(true)}><PanelRightOpen size={16} /><span>{t.graphicsCollapsedLabel}</span></button>}</div>
+              <div className="main-split"><div className="editor-column"><div className="editor-header"><div className="breadcrumbs"><span>{project.name}</span><span>/</span><strong>{selectedFile.path}</strong></div><div className="editor-actions">{isVisualizing ? workspaceCapabilities.exitVisualizer ? <button className="secondary-button" onClick={exitVisualizer}><X size={15} /> {t.exitVisualizer}</button> : null : workspaceCapabilities.actions ? <><button className="secondary-button" onClick={() => setOutput(t.readyOutput)}><RotateCcw size={15} /> {t.resetOutput}</button><button className="secondary-button" onClick={runVisualize} disabled={isRunning || isVisualizerLoading}><Workflow size={15} /> {isVisualizerLoading ? t.visualizing : t.visualize}</button><button className="run-button" onClick={runCode} disabled={isRunning}><Play size={15} fill="currentColor" /> {isRunning ? t.running : t.runProject}</button></> : null}</div></div>{isVisualizing && <div className="visualizer-bar"><div className="visualizer-title"><Workflow size={15} /><span>{t.visualizerTitle}</span></div>{visualTraceSteps.length > 0 ? <><span className="visualizer-step-count">{clampedStepIndex === -1 ? t.visualizerBeforeStart : t.visualizerStepOf(clampedStepIndex + 1, visualTraceSteps.length)}</span><div className="visualizer-scrubber-track"><input className="visualizer-scrubber" type="range" min={-1} max={Math.max(0, visualTraceSteps.length - 1)} value={clampedStepIndex} onChange={(event) => { setIsVisualPlaying(false); setVisualStepIndex(Number(event.target.value)) }} />{errorTraceStep && <span className="visualizer-scrubber-error" title={errorTraceStep.label} style={{ '--marker-position': (errorTraceStep.step + 1) / Math.max(1, visualTraceSteps.length) } as CSSProperties} />}</div>{visualTrace?.truncated && <span className="visualizer-truncated-hint"><AlertTriangle size={13} />{t.visualizerTruncated}</span>}<div className="visualizer-controls"><button className="icon-button small" aria-label={t.visualizerRestart} onClick={visualRestart}><RotateCcw size={15} /></button><button className="icon-button small" aria-label={t.visualizerPrevStep} onClick={visualStepBack} disabled={clampedStepIndex === -1}><SkipBack size={15} /></button><button className="icon-button small" aria-label={isVisualPlaying ? t.visualizerPause : t.visualizerPlay} onClick={visualTogglePlay}>{isVisualPlaying ? <Pause size={15} /> : <Play size={15} />}</button><button className="icon-button small" aria-label={t.visualizerNextStep} onClick={visualStepForward} disabled={clampedStepIndex >= visualTraceSteps.length - 1}><SkipForward size={15} /></button></div></> : <span className="visualizer-step-count">{t.visualizerNoSteps}</span>}<label className="visualizer-animate-toggle"><input type="checkbox" checked={animationsEnabled} onChange={(event) => setAnimationsEnabled(event.target.checked)} /> {t.visualizerAnimate}</label></div>}{isVisualizing && visualTrace?.error && !errorTraceStep && <div className="visualizer-warning"><AlertTriangle size={14} />{t.visualizerError(visualTrace.error)}</div>}{(workspaceCapabilities.editor || isVisualizing) && <section className="editor-panel"><div className="editor-tabs">{openFiles.map((path) => { const file = project.files[path]; return <button className={`editor-tab ${activeFile === path ? 'active' : ''}`} key={path} onClick={() => onOpenFile(path)}><span className={`tab-file-icon ${file.kind === 'python' ? 'python' : 'notes'}`}>{file.kind === 'python' ? <FileCode2 size={14} /> : <BookOpen size={14} />}</span><span>{file.path}</span><span className="tab-close" role="button" aria-label={t.closeFile(file.path)} onClick={(event) => { event.stopPropagation(); onCloseFile(path) }}><X size={13} /></span></button> })}</div><div className="editor-wrap">{isVisualizing ? <div className={`visualizer-view${animationsEnabled ? ' visualizer-animated' : ''}`} ref={visualizerScrollRef}><div className="visualizer-canvas" ref={visualizerCanvasRef}><Frame frameId={0} path={activeFile} scope={{ kind: 'module' }} openFrames={framesForRender} nodeIndexByFile={astIndexByFile} visualSources={visualSources} trace={visualTrace?.trace ?? []} uptoStep={currentTraceStep?.step ?? -1} currentStep={currentTraceStep} nextStep={nextTraceStep} monaco={monaco} noLocalsLabel={t.visualizerNoLocals} declareTarget={nextStepDeclareTarget} pendingCallLocals={pendingCallLocals} errorStep={isAtErrorStep ? errorTraceStep : null} collapsedCalls={collapsedCalls} collapsedCallsLabel={collapsedCallsLabel} />{animationsEnabled && closingBoxes.length > 0 && <div className="visualizer-closing-boxes">{closingBoxes.map((box) => <div key={box.id} className="visual-closing-box-ghost" style={{ left: box.left, top: box.top, width: box.width, height: box.height }} dangerouslySetInnerHTML={{ __html: box.html }} />)}</div>}{(connectorPaths.length > 0 || flights.length > 0) && <svg className="visualizer-connectors"><defs><marker id="visualizer-arrowhead" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" /></marker></defs>{connectorPaths.map((connector, index) => <path key={index} d={connector.d} markerEnd="url(#visualizer-arrowhead)" />)}{animationsEnabled && flights.map((flight) => <path key={`flight-${flight.id}`} className="visual-flight-arrow" d={flight.d} markerEnd="url(#visualizer-arrowhead)" />)}</svg>}{animationsEnabled && flights.length > 0 && <div className="visualizer-flights">{flights.map((flight) => <span key={flight.id} className="visual-flight-value" style={{ offsetPath: `path('${flight.d}')` }}>{flight.value}</span>)}</div>}</div></div> : <Editor key="normal-editor" height="100%" language={selectedFile.kind === 'python' ? 'python' : 'markdown'} theme="vs-dark" value={selectedFile.code} onChange={updateCode} options={{ minimap: { enabled: false }, fontSize: 15, lineHeight: 24, padding: { top: 22 }, fontFamily: "'JetBrains Mono', monospace", scrollBeyondLastLine: false, smoothScrolling: true, automaticLayout: true, tabSize: 4, insertSpaces: true, detectIndentation: false }} />}</div></section>}<section className="output-panel"><div className="output-heading"><div className="output-title"><SquareTerminal size={16} /><span>{t.output}</span><span className="runtime-badge"><span className="pulse" /> {t.pyodideRuntime}</span></div><span className="output-hint">{t.runsFile(project.mainFile)}</span></div><pre>{isVisualizing ? (isAtErrorStep ? <>{visualStdout && !visualStdout.endsWith('\n') ? `${visualStdout}\n` : visualStdout}<span className="output-error">{visualTrace?.error}</span></> : visualStdout || t.noOutput) : output}</pre></section></div>{isGraphicsOpen ? <aside className="graphics-panel"><div className="output-heading"><div className="output-title"><Sparkles size={16} /><span>{t.turtleGraphics}</span>{graphics.length > 0 && <span className="runtime-badge"><span className="pulse" /> {t.gturtleWindow}</span>}</div><button className="icon-button small" aria-label={t.collapseGraphics} onClick={() => onGraphicsOpenChange(false)}><PanelRightClose size={15} /></button></div>{(isVisualizing ? (visualTrace?.graphics.slice(0, currentTraceStep?.graphicsLen ?? 0) as TurtleCommand[] ?? []) : graphics).length > 0 ? <GraphicsWindow commands={isVisualizing ? (visualTrace?.graphics.slice(0, currentTraceStep?.graphicsLen ?? 0) as TurtleCommand[] ?? []) : graphics} /> : <p className="graphics-empty">{t.graphicsEmptyBefore} <code>gturtle</code> {t.graphicsEmptyAfter}</p>}</aside> : <button className="graphics-collapsed-toggle" aria-label={t.expandGraphics} onClick={() => onGraphicsOpenChange(true)}><PanelRightOpen size={16} /><span>{t.graphicsCollapsedLabel}</span></button>}</div>
       {inputRequest !== null && <div className="input-dialog-backdrop" role="presentation" onClick={() => respondToInput(true)}><form className="input-dialog" role="dialog" aria-modal="true" aria-label={t.inputDialogTitle} onClick={(event) => event.stopPropagation()} onSubmit={(event) => { event.preventDefault(); respondToInput(false) }}><div className="input-dialog-heading"><Terminal size={16} /><span>{t.inputDialogTitle}</span></div><p className="input-dialog-prompt">{inputRequest || t.inputDialogFallbackPrompt}</p><input ref={inputFieldRef} className="input-dialog-field" type="text" value={inputValue} onChange={(event) => setInputValue(event.target.value)} placeholder={t.inputPlaceholder} /><div className="input-dialog-actions"><button type="button" className="secondary-button" onClick={() => respondToInput(true)}>{t.inputCancel}</button><button type="submit" className="run-button">{t.inputSubmit}</button></div></form></div>}
     </div>
   )

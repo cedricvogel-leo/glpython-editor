@@ -8,7 +8,10 @@
 // stable id embedded in the AST-as-JSON tree - so the UI can substitute that
 // node's original source with the step's computed value inline.
 
-export type TraceStepKind = 'eval' | 'exec' | 'branch' | 'loop-iter' | 'call-enter' | 'call-pending'
+// 'error' is only ever the very last step: the node the uncaught exception
+// was raised at, in the frame it was raised in, with Python's own last
+// traceback line as its label/valueText.
+export type TraceStepKind = 'eval' | 'exec' | 'branch' | 'loop-iter' | 'call-enter' | 'call-pending' | 'error'
 
 export type TraceStep = {
   step: number
@@ -99,7 +102,12 @@ export type TraceResult = {
   ast: Record<string, AstFile>
   output: string
   graphics: unknown[]
+  // The traceback when the program failed - in the learner's own terms
+  // (their files/lines only) whenever the trace ends in an 'error' step,
+  // otherwise the raw traceback (e.g. the main file doesn't parse).
   error: string | null
+  // Just the traceback's last line, e.g. "ZeroDivisionError: division by zero".
+  errorMessage?: string | null
   truncated: boolean
 }
 
@@ -326,6 +334,52 @@ export function computeOpenFramesUpTo(trace: TraceStep[], uptoStep: number): Map
   }
 
   return open
+}
+
+// A deep chain of open call boxes (e.g. a recursion without a base case)
+// shows only its outermost few boxes and its innermost one(s) in full: the
+// boxes in between are replaced by a single "... N more calls of f(x) ..."
+// marker, which itself contains the first box shown again. Without this,
+// every extra level of nesting makes the boxes' layout more expensive, until
+// the page stops responding (well before the 200-call limit).
+export type CollapsedCalls = {
+  // The outermost hidden frame - its parent renders the marker in its place.
+  firstHiddenFrameId: number
+  // The first frame shown again, nested inside the marker.
+  resumeFrame: OpenFrame
+  hiddenCount: number
+  // "loop(3)" when every hidden call is the same call, "f(…)" when they share
+  // only the function, null when they're calls to different functions.
+  callText: string | null
+}
+
+const COLLAPSE_KEEP_OUTER = 3
+const COLLAPSE_MIN_HIDDEN = 4
+const COLLAPSE_MAX_CALL_TEXT = 40
+
+// `keepInner` is how many of the innermost boxes stay visible - callers pass
+// 2 while a one-step-early "about to open" box is the innermost one, so the
+// box that's actually running stays visible next to it.
+export function collapseDeepCallChain(openFrames: Map<number, OpenFrame>, keepInner: number): CollapsedCalls | null {
+  // Open call frames always form a single chain (the call stack), so each
+  // frame has at most one open child.
+  const childOf = new Map<number, OpenFrame>()
+  for (const frame of openFrames.values()) childOf.set(frame.parentFrameId, frame)
+  const chain: OpenFrame[] = []
+  for (let frame = childOf.get(0); frame; frame = childOf.get(frame.frameId)) chain.push(frame)
+
+  const hidden = chain.slice(COLLAPSE_KEEP_OUTER, chain.length - keepInner)
+  if (hidden.length < COLLAPSE_MIN_HIDDEN) return null
+
+  const argsText = (frame: OpenFrame) => frame.paramAnnotations.map(([, text]) => text.replace(/^=/, '')).join(', ')
+  const funcName = hidden[0].funcName
+  const firstArgs = argsText(hidden[0])
+  let callText: string | null = null
+  if (hidden.every((frame) => frame.funcName === funcName)) {
+    const sameArgs = hidden.every((frame) => argsText(frame) === firstArgs)
+    callText = sameArgs && firstArgs.length <= COLLAPSE_MAX_CALL_TEXT ? `${funcName}(${firstArgs})` : `${funcName}(\u2026)`
+  }
+  return { firstHiddenFrameId: hidden[0].frameId, resumeFrame: chain[chain.length - keepInner], hiddenCount: hidden.length, callText }
 }
 
 // Absolute character offset (into the whole source string) of the start of

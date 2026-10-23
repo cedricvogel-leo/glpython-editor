@@ -16,6 +16,10 @@ class _GlpythonReturn(Exception):
   def __init__(self, value):
     self.value = value
 
+# The interpreter's own non-error control flow - never tagged with an error
+# site (see _glpython_eval / _glpython_exec_stmt).
+_GLPYTHON_CONTROL_FLOW = (_GlpythonTraceLimit, _GlpythonBreak, _GlpythonContinue, _GlpythonReturn)
+
 _GLPYTHON_OP_SYMBOLS = {
   ast.Add: "+", ast.Sub: "-", ast.Mult: "*", ast.Div: "/", ast.FloorDiv: "//", ast.Mod: "%", ast.Pow: "**",
   ast.LShift: "<<", ast.RShift: ">>", ast.BitOr: "|", ast.BitXor: "^", ast.BitAnd: "&", ast.MatMult: "@",
@@ -153,9 +157,12 @@ class _GlpythonCallDepthExceeded(Exception):
 def _glpython_pos(node):
   return (getattr(node, "lineno", None), getattr(node, "end_lineno", None), getattr(node, "col_offset", None), getattr(node, "end_col_offset", None))
 
-def _glpython_record(node, kind, label, value_text=None, func_name="<module>", extra_locals=None, reset_node_ids=None, annotate_node_id=None, annotate_text=None, closes_frame_id=None):
+def _glpython_record(node, kind, label, value_text=None, func_name="<module>", extra_locals=None, reset_node_ids=None, annotate_node_id=None, annotate_text=None, closes_frame_id=None, force=False):
   global _glpython_step_count
-  if getattr(node, "_glpython_id", None) in _glpython_suppress_substitution_ids:
+  # `force` is only used for the final "error" step (see
+  # _glpython_record_error), which must always be recorded - even for a
+  # suppressed node or when the error struck right at the step limit.
+  if not force and getattr(node, "_glpython_id", None) in _glpython_suppress_substitution_ids:
     # These are the sub-expressions of a for-loop's own iterable
     # ("range(3)" in "for i in range(3):") - their substitution is always
     # suppressed (see _exec_for) so the header never collapses to the
@@ -164,7 +171,7 @@ def _glpython_record(node, kind, label, value_text=None, func_name="<module>", e
     # recording it rather than giving the learner a no-op step to click
     # through; the loop-iter step right after is what actually changes.
     return
-  if _glpython_step_count >= _GLPYTHON_MAX_STEPS:
+  if not force and _glpython_step_count >= _GLPYTHON_MAX_STEPS:
     raise _GlpythonTraceLimit()
   line, end_line, col, end_col = _glpython_pos(node)
   if line is None:
@@ -379,12 +386,23 @@ def _glpython_node_source(node):
   return getattr(node, "_glpython_source", _glpython_summary_for_node(node))
 
 def _glpython_eval(node, scope):
-  handler = _EXPR_HANDLERS.get(type(node))
-  if handler is None:
-    value = _glpython_fallback_eval(node, scope)
-    _glpython_record(node, "eval", _glpython_node_source(node), _glpython_safe_repr(value), _glpython_current_func())
-    return value
-  return handler(node, scope)
+  try:
+    handler = _EXPR_HANDLERS.get(type(node))
+    if handler is None:
+      value = _glpython_fallback_eval(node, scope)
+      _glpython_record(node, "eval", _glpython_node_source(node), _glpython_safe_repr(value), _glpython_current_func())
+      return value
+    return handler(node, scope)
+  except BaseException as error:
+    # Remembers the innermost student node an exception was raised at,
+    # while the frame/func stacks still describe that point (they're
+    # unwound by the time _glpython_run_visual sees the exception). Kept
+    # free of Python-level calls on purpose: a RecursionError lands here
+    # right at the recursion limit, where any further call would raise
+    # again. See _glpython_record_error.
+    if "_glpython_site" not in error.__dict__ and not isinstance(error, _GLPYTHON_CONTROL_FLOW):
+      error._glpython_site = (node, _glpython_current_path, _glpython_frame_stack[:], _glpython_current_func_stack[-1])
+    raise
 
 def _eval_constant(node, scope):
   return node.value
@@ -919,12 +937,19 @@ _STMT_HANDLERS = {
 }
 
 def _glpython_exec_stmt(node, scope):
-  handler = _STMT_HANDLERS.get(type(node))
-  if handler is None:
-    _glpython_fallback_exec(node, scope)
-    _glpython_record(node, "exec", _glpython_node_source(node), None, _glpython_current_func(), _glpython_snapshot_locals(scope))
-    return
-  handler(node, scope)
+  try:
+    handler = _STMT_HANDLERS.get(type(node))
+    if handler is None:
+      _glpython_fallback_exec(node, scope)
+      _glpython_record(node, "exec", _glpython_node_source(node), None, _glpython_current_func(), _glpython_snapshot_locals(scope))
+      return
+    handler(node, scope)
+  except BaseException as error:
+    # Same error-site tagging as _glpython_eval, for exceptions raised by a
+    # statement itself rather than one of its expressions (e.g. "raise").
+    if "_glpython_site" not in error.__dict__ and not isinstance(error, _GLPYTHON_CONTROL_FLOW):
+      error._glpython_site = (node, _glpython_current_path, _glpython_frame_stack[:], _glpython_current_func_stack[-1])
+    raise
 
 def _glpython_exec_stmts(statements, scope):
   for statement in statements:
@@ -1061,6 +1086,64 @@ class _GlpythonCapture:
   def getvalue(self):
     return "".join(self._chunks)
 
+# The exception's last traceback line, exactly as Python prints it (e.g.
+# "TypeError: unsupported operand type(s) for +: 'NoneType' and 'NoneType'").
+def _glpython_error_message(error):
+  text = str(error)
+  return f"{type(error).__name__}: {text}" if text else type(error).__name__
+
+# Appends one final "error" step at the node the exception was raised at
+# (see the error-site tagging in _glpython_eval), tagged with the frame it
+# was raised in - so the UI can step up to the failure, with every call box
+# that was open at that moment still open.
+def _glpython_record_error(site, message):
+  global _glpython_current_path, _glpython_frame_stack
+  node, path, frame_stack, func = site
+  _glpython_current_path = path
+  _glpython_frame_stack = frame_stack
+  _glpython_record(node, "error", message, message, func, force=True)
+
+# A traceback in the learner's terms: only their own files/lines, rebuilt
+# from the call-enter steps of the frames open at the error site - the real
+# traceback would list this interpreter's own frames instead. Repeated
+# identical lines collapse like CPython's own "[Previous line repeated ...]".
+def _glpython_learner_traceback(site, message, source_lines):
+  node, path, frame_stack, func = site
+  call_enters = {entry["frameId"]: entry for entry in _glpython_trace_log if entry["kind"] == "call-enter"}
+  locations = []
+  caller = "<module>"
+  for frame_id in frame_stack[1:]:
+    entry = call_enters.get(frame_id)
+    if entry is None:
+      continue
+    locations.append((entry["path"], entry["line"], caller))
+    caller = entry["func"]
+  locations.append((path, getattr(node, "lineno", 0), func))
+
+  lines = ["Traceback (most recent call last):"]
+  def flush_repeats(count):
+    if count > 3:
+      lines.append(f"  [Previous line repeated {count - 3} more times]")
+  previous = None
+  count = 0
+  for location in locations:
+    if location == previous:
+      count += 1
+      if count > 3:
+        continue
+    else:
+      flush_repeats(count)
+      previous = location
+      count = 1
+    location_path, line, name = location
+    lines.append(f'  File "{location_path}", line {line}, in {name}')
+    file_lines = source_lines.get(location_path, [])
+    if 0 < line <= len(file_lines) and file_lines[line - 1].strip():
+      lines.append("    " + file_lines[line - 1].strip())
+  flush_repeats(count)
+  lines.append(message)
+  return "\n".join(lines) + "\n"
+
 def _glpython_run_visual(main_path, file_paths_json):
   global _glpython_trace_log, _glpython_step_count, _glpython_stdout_len, _glpython_graphics_commands
   global _glpython_module_scope, _glpython_current_path, _glpython_current_func_stack, _glpython_call_depth
@@ -1081,11 +1164,13 @@ def _glpython_run_visual(main_path, file_paths_json):
   file_paths = json.loads(file_paths_json)
   ast_by_file = {}
   trees = {}
+  source_lines = {}
   counter = [0]
   for path in file_paths:
     try:
       with open("/" + path, "r", encoding="utf-8") as handle:
         source = handle.read()
+      source_lines[path] = source.splitlines()
       tree = ast.parse(source, filename=path)
       _glpython_preprocess(tree, source, counter)
       trees[path] = tree
@@ -1109,6 +1194,7 @@ def _glpython_run_visual(main_path, file_paths_json):
   sys.stderr = capture
 
   error_text = None
+  error_message = None
   truncated = False
   try:
     _glpython_current_path = main_path
@@ -1124,7 +1210,15 @@ def _glpython_run_visual(main_path, file_paths_json):
     except _GlpythonReturn:
       pass
     except BaseException as error:
-      error_text = "".join(traceback.format_exception(type(error), error, error.__traceback__))
+      error_message = _glpython_error_message(error)
+      site = error.__dict__.get("_glpython_site")
+      if site is not None:
+        _glpython_record_error(site, error_message)
+        error_text = _glpython_learner_traceback(site, error_message, source_lines)
+      else:
+        # Nothing was traced (e.g. the main file doesn't parse) - keep the
+        # raw traceback, shown as the visualizer's warning banner.
+        error_text = "".join(traceback.format_exception(type(error), error, error.__traceback__))
   finally:
     sys.stdout = original_stdout
     sys.stderr = original_stderr
@@ -1135,5 +1229,6 @@ def _glpython_run_visual(main_path, file_paths_json):
     "output": capture.getvalue(),
     "graphics": gturtle.commands,
     "error": error_text,
+    "errorMessage": error_message,
     "truncated": truncated,
   })
