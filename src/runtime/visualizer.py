@@ -1,4 +1,4 @@
-import ast, sys, json, math, traceback
+import ast, sys, json, math, re, traceback
 import types as _glpython_types
 
 _GLPYTHON_MAX_STEPS = 6000
@@ -160,8 +160,24 @@ _glpython_last_call_return = None
 class _GlpythonCallDepthExceeded(Exception):
   pass
 
+# The UI indexes text in UTF-16 code units (JavaScript strings), but Python's
+# ast reports columns in UTF-8 bytes and tokenize in characters - they only
+# agree on plain ASCII lines, not with "ü" (2 bytes, 1 unit) or "🙂" (4 bytes,
+# 1 character, 2 units). Every column sent to the UI goes through here; `unit`
+# says what `offset` counts ("utf8" bytes or "chars").
+def _glpython_ui_column(line, offset, unit="utf8"):
+  prefix = line.encode("utf-8")[:offset].decode("utf-8", "replace") if unit == "utf8" else line[:offset]
+  return len(prefix.encode("utf-16-le")) // 2
+
+# A node's position for the UI: lines as Python counts them, columns in UTF-16
+# code units (set by _glpython_preprocess; nodes it never saw keep Python's).
 def _glpython_pos(node):
-  return (getattr(node, "lineno", None), getattr(node, "end_lineno", None), getattr(node, "col_offset", None), getattr(node, "end_col_offset", None))
+  return (
+    getattr(node, "lineno", None),
+    getattr(node, "end_lineno", None),
+    getattr(node, "_glpython_col", getattr(node, "col_offset", None)),
+    getattr(node, "_glpython_end_col", getattr(node, "end_col_offset", None)),
+  )
 
 def _glpython_record(node, kind, label, value_text=None, func_name="<module>", extra_locals=None, reset_node_ids=None, annotate_node_id=None, annotate_text=None, closes_frame_id=None, force=False, extra=None):
   global _glpython_step_count
@@ -1121,9 +1137,15 @@ def _glpython_has_locals(def_node):
   return False
 
 def _glpython_preprocess(tree, source, counter):
+  # Lines as ast numbers them (it treats \r\n, \r and \n as line breaks).
+  lines = re.split(r"\r\n|\r|\n", source)
   for node in ast.walk(tree):
     counter[0] += 1
     node._glpython_id = counter[0]
+    if getattr(node, "lineno", None) is not None and node.col_offset is not None:
+      node._glpython_col = _glpython_ui_column(lines[node.lineno - 1], node.col_offset)
+      if node.end_lineno is not None and node.end_col_offset is not None:
+        node._glpython_end_col = _glpython_ui_column(lines[node.end_lineno - 1], node.end_col_offset)
     node._glpython_summary = _glpython_summary(node)
     try:
       segment = ast.get_source_segment(source, node)
@@ -1198,8 +1220,9 @@ def _glpython_ast_to_dict(node):
     if hasattr(node, "lineno"):
       entry["line"] = node.lineno
       entry["endLine"] = getattr(node, "end_lineno", node.lineno)
-      entry["col"] = node.col_offset
-      entry["endCol"] = getattr(node, "end_col_offset", node.col_offset)
+      _, _, col, end_col = _glpython_pos(node)
+      entry["col"] = col
+      entry["endCol"] = end_col if end_col is not None else col
     fields = {}
     for field_name, value in ast.iter_fields(node):
       if isinstance(value, ast.AST):
@@ -1356,7 +1379,8 @@ def _glpython_hidden_ranges(source, tree):
       before = lines[row - 1][:col]
       if before.strip():
         # A comment after code: drop it together with the spaces before it.
-        ranges.append([row, len(before.rstrip()), end_row, end_col])
+        # (tokenize counts characters; the UI needs UTF-16 code units.)
+        ranges.append([row, _glpython_ui_column(lines[row - 1], len(before.rstrip()), "chars"), end_row, _glpython_ui_column(lines[end_row - 1], end_col, "chars")])
       else:
         ranges.append([row, 0, row + 1, 0])
   except (tokenize.TokenError, IndentationError, SyntaxError):
