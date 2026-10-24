@@ -25,13 +25,19 @@ class _GlpythonDocTestRunner(doctest.DocTestRunner):
     self._displayed.append(value)
     self._original_display(value)
 
-  def _example_record(self, test, example, text):
-    return {
+  def _example_record(self, test, example, text, got=None):
+    record = {
       "name": test.name,
       "line": (test.lineno or 0) + example.lineno + 1,
       "source": example.source.rstrip("\n"),
       "text": text,
     }
+    # For an example whose output didn't match: the two texts doctest
+    # compared, so the visualizer can show them next to the final value.
+    if got is not None:
+      record["want"] = example.want
+      record["got"] = got
+    return record
 
   def report_success(self, out, test, example, got):
     if self._displayed == [None] and got.strip():
@@ -40,7 +46,7 @@ class _GlpythonDocTestRunner(doctest.DocTestRunner):
 
   def report_failure(self, out, test, example, got):
     text = self._failure_header(test, example) + self._checker.output_difference(example, got, self.optionflags)
-    self.failed_examples.append(self._example_record(test, example, text))
+    self.failed_examples.append(self._example_record(test, example, text, got))
     self._displayed = []
 
   def report_unexpected_exception(self, out, test, example, exc_info):
