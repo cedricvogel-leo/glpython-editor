@@ -209,6 +209,12 @@ origin that is allowed to communicate with it:
 https://example.test/embed/?parentOrigin=https%3A%2F%2Fcourse.example
 ```
 
+Optional query parameters adapt the embed to a host such as the LiaScript
+macro: `features=run,repl,visualize,…` hides the REPL (`repl`), the visualizer
+(`visualize`) or its → chain export (`export`) unless listed (capabilities
+`repl`, `visualization`, `export`), and `size=large` with
+`visualizerHeight=<px>` shows bigger code and a visualizer at least that tall.
+
 The UI language is the optional `lang` query parameter (e.g. the LiaScript
 course's language), else the browser's language, else English; only the
 primary subtag counts (`de-CH` → German), and an unsupported language (e.g.

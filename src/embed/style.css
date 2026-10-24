@@ -38,3 +38,14 @@ body,
     padding: 8px;
   }
 }
+
+/* "?size=large": bigger code (20px, line height 1.6), and the visualizer at
+   least as tall as the macro asks for (60% of the course window). */
+.embed-app--large .visualizer-view {
+  font-size: 20px;
+  line-height: 1.6;
+}
+
+.embed-app--large .editor-panel {
+  min-height: var(--glp-large-visualizer-height, 330px);
+}
