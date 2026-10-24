@@ -39,7 +39,7 @@
 .visualizer-animate-toggle { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; color: #52645b; font-size: 11px; white-space: nowrap; cursor: pointer; user-select: none; }
 .visualizer-animate-toggle input { accent-color: #27725c; cursor: pointer; }
 .visualizer-animated .frame-line, .visualizer-animated .frame-line-row { transition: background-color .25s ease; }
-.visualizer-animated .visual-current-line, .visualizer-animated .visual-executed-line, .visualizer-animated .visual-substituted-value, .visualizer-animated .visual-next-step, .visualizer-animated .visual-loop-annotation { transition: background-color .25s ease, color .25s ease, outline-color .25s ease; }
+.visualizer-animated .visual-current-line, .visualizer-animated .visual-executed-line, .visualizer-animated .visual-substituted-value, .visualizer-animated .visual-next-step, .visualizer-animated .visual-loop-annotation, .visualizer-animated .visual-param-annotation { transition: background-color .25s ease, color .25s ease, outline-color .25s ease; }
 .visualizer-animated .locals-value { transition: color .2s ease; }
 .visualizer-animated .locals-value:not(.locals-value-pending) { animation: visual-value-pop .5s ease; }
 /* The one case where opening a frame-box isn't immediate: a user-defined
@@ -98,3 +98,14 @@
 .frame-collapsed-calls { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 4px; margin-left: 4px; padding: 4px 6px 6px; border: 1px dashed #5a8f78; border-radius: 6px; }.frame-collapsed-calls-label { color: #8fb8a5; font: italic 12px/1.5 'JetBrains Mono', monospace; white-space: nowrap; }.frame-collapsed-calls > .frame-box { margin-left: 0; }
 .output-panel pre { max-height: 240px; overflow-y: auto; }.repl-entry { display: block; margin-top: 6px; }.repl-entry > span { display: block; }.repl-echo { color: #2b6554; }.repl-value { color: #263a35; }.repl-value--none { color: #a3aea8; }.repl-hint { color: #8a5a1f; font-style: italic; }
 .repl-line { display: flex; align-items: center; gap: 8px; padding: 8px 12px 10px 17px; border-top: 1px solid #e6e4dc; }.repl-prompt { flex-shrink: 0; color: #2b6554; font: 600 12px/1.7 'JetBrains Mono', monospace; }.repl-input { flex: 1; min-width: 0; padding: 4px 6px; color: #263a35; background: transparent; border: 1px solid transparent; border-radius: 5px; font: 12px/1.7 'JetBrains Mono', monospace; outline: none; }.repl-input:focus { background: #fff; border-color: #cfe0d1; }.repl-visualize { flex-shrink: 0; }
+/* Nested call boxes list their variables in a row below their code instead of
+   a side panel: each level of nesting would otherwise add a whole panel's width,
+   pushing deeper boxes off the right edge. `contain: inline-size` keeps a long
+   value from widening the box; it wraps within the code's width instead. */
+.frame-box:not(.frame-box--root) { flex-direction: column; }
+.frame-box:not(.frame-box--root) > .frame-divider { display: none; }
+.frame-box:not(.frame-box--root) > .frame-vars { width: auto; display: flex; flex-wrap: wrap; gap: 0 16px; padding: 3px 12px 5px; border-top: 1px solid rgba(255, 255, 255, .12); overflow: visible; contain: inline-size; }
+.frame-box:not(.frame-box--root) > .frame-vars .locals-row { min-width: 0; padding: 0; border-bottom: 0; }
+.frame-box:not(.frame-box--root) > .frame-vars .locals-value { overflow-wrap: anywhere; }
+.frame-box:not(.frame-box--root) > .frame-vars .frame-vars-empty { display: none; }
+.visual-param-annotation { color: #d3ebe0 !important; }
