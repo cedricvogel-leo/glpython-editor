@@ -190,9 +190,13 @@ origin that is allowed to communicate with it:
 https://example.test/embed/?parentOrigin=https%3A%2F%2Fcourse.example
 ```
 
-An optional `lang` query parameter sets the UI language: `de` (or a regional
-variant such as `de-CH`) for German, anything else for English. The strings
-are worded as in the glpython IDE (`src/embed/strings.ts`).
+The UI language is the optional `lang` query parameter (e.g. the LiaScript
+course's language), else the browser's language, else English; only the
+primary subtag counts (`de-CH` → German), and an unsupported language (e.g.
+`fr`) falls through to the next step. The UI strings live in `src/i18n.ts`
+(`coreStrings`, German and English), which the glpython IDE imports too;
+`resolveUiLocale` implements this order for any host. Python's own values and
+error messages are never translated.
 
 It sends `glpython:ready` with runtime capabilities, accepts versioned
 `glpython:load`, `glpython:run`, `glpython:visualize`, and `glpython:reset`

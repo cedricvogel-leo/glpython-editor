@@ -1,4 +1,6 @@
 export { GlPythonWorkspace } from './GlPythonWorkspace'
+export { coreStrings, resolveUiLocale, uiLocales } from './i18n'
+export type { UiLocale } from './i18n'
 export type { GlPythonWorkspaceProps, CoreStrings, WorkspaceCapabilities, WorkspaceCommand } from './GlPythonWorkspace'
 
 export {
