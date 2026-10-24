@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { GlPythonWorkspace, type WorkspaceCommand } from '../GlPythonWorkspace'
 import {
-  GLPYTHON_EMBED_PROTOCOL_VERSION,
   isEmbedMode,
   parseParentMessage,
   parseParentOrigin,
   type EmbedMode,
   type GlPythonChildMessage,
+  type GlPythonFile,
+  type GlPythonProtocolVersion,
 } from '../embedProtocol'
 import { updateProjectFile, type Project } from '../project'
 import type { VisualizerMode } from '../visualizer'
@@ -14,19 +15,22 @@ import { coreStrings, resolveUiLocale } from '../i18n'
 
 const defaultSource = 'print("Hello from glpython")'
 
-function createEmbedProject(source: string): Project {
+type ChildMessageWithoutVersion = GlPythonChildMessage extends infer Message ? Message extends unknown ? Omit<Message, 'version'> : never : never
+
+// A single source (protocol version 1) becomes "main.py"; a version 2
+// program brings its own files and says which one runs.
+function createEmbedProject(source: string, files?: GlPythonFile[], mainFile?: string): Project {
+  const programFiles = files && mainFile ? files : [{ path: 'main.py', source }]
   return {
     id: 'liascript-embed',
     name: 'LiaScript',
-    mainFile: 'main.py',
-    files: {
-      'main.py': {
-        path: 'main.py',
-        label: 'Main program',
-        kind: 'python',
-        code: source,
-      },
-    },
+    mainFile: files && mainFile ? mainFile : 'main.py',
+    files: Object.fromEntries(programFiles.map((file) => [file.path, {
+      path: file.path,
+      label: file.path,
+      kind: 'python' as const,
+      code: file.source,
+    }])),
   }
 }
 
@@ -60,9 +64,14 @@ export function App() {
   const commandIdRef = useRef(0)
   const rootRef = useRef<HTMLDivElement | null>(null)
 
-  const sendToParent = useCallback((message: GlPythonChildMessage) => {
+  // The protocol version the parent last spoke (see
+  // GLPYTHON_EMBED_PROTOCOL_VERSION): every message to it uses that version,
+  // so an older parent never sees one it would reject.
+  const parentVersionRef = useRef<GlPythonProtocolVersion>(1)
+
+  const sendToParent = useCallback((message: ChildMessageWithoutVersion) => {
     if (configuredParentOrigin && window.parent !== window) {
-      window.parent.postMessage(message, configuredParentOrigin)
+      window.parent.postMessage({ ...message, version: parentVersionRef.current }, configuredParentOrigin)
     }
   }, [configuredParentOrigin])
 
@@ -75,13 +84,13 @@ export function App() {
       if (!message) {
         sendToParent({
           type: 'glpython:error',
-          version: GLPYTHON_EMBED_PROTOCOL_VERSION,
           code: 'invalid-message',
           message: 'The parent sent an invalid glpython message.',
         })
         return
       }
 
+      parentVersionRef.current = message.version
       if (message.type === 'glpython:reset') {
         setCommand(null)
         setWorkspaceGeneration((generation) => generation + 1)
@@ -91,7 +100,7 @@ export function App() {
       const nextMode = message.mode ?? mode
       setMode(nextMode)
       setIsGraphicsOpen(nextMode === 'turtle')
-      setProject(createEmbedProject(message.source))
+      setProject(createEmbedProject(message.source, message.files, message.mainFile))
       if (message.type === 'glpython:run' || message.type === 'glpython:visualize') {
         setCommand({
           id: ++commandIdRef.current,
@@ -105,9 +114,9 @@ export function App() {
     window.addEventListener('message', onMessage)
     sendToParent({
       type: 'glpython:ready',
-      version: GLPYTHON_EMBED_PROTOCOL_VERSION,
       capabilities: {
         input: typeof SharedArrayBuffer !== 'undefined',
+        files: true,
       },
     })
     return () => window.removeEventListener('message', onMessage)
@@ -119,7 +128,6 @@ export function App() {
     const observer = new ResizeObserver(() => {
       sendToParent({
         type: 'glpython:resize',
-        version: GLPYTHON_EMBED_PROTOCOL_VERSION,
         height: Math.ceil(root.getBoundingClientRect().height),
       })
     })

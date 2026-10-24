@@ -9,6 +9,7 @@ let mountedFiles = []
 // them, so a visualized REPL input must render its call boxes from these
 // rather than from whatever the editor holds now.
 let lastRunFiles = {}
+let lastRunMainFile = 'main.py'
 const REPL_PATH = '<repl>'
 let inputControl = null
 let inputPayload = null
@@ -111,6 +112,7 @@ self.onmessage = async (event) => {
       const pyodide = await getPyodide()
       await mountProjectFiles(pyodide, event.data.project.files)
       lastRunFiles = event.data.project.files
+      lastRunMainFile = event.data.project.mainFile
       let output = ''
       pyodide.setStdout({ batched: (text) => { output += `${text}\n` } })
       pyodide.setStderr({ batched: (text) => { output += `${text}\n` } })
@@ -143,7 +145,7 @@ self.onmessage = async (event) => {
       const pyodide = await getPyodide()
       // Nothing may have been run or visualized yet in this worker.
       if (!pyodide.FS.analyzePath('/gturtle.py').exists) pyodide.FS.writeFile('/gturtle.py', turtleModule)
-      const result = JSON.parse(String(callPython(pyodide, '_glpython_run_visual_repl', event.data.source, JSON.stringify(lastRunFiles))))
+      const result = JSON.parse(String(callPython(pyodide, '_glpython_run_visual_repl', event.data.source, JSON.stringify(lastRunFiles), lastRunMainFile)))
       if ('replError' in result) {
         self.postMessage({ type: 'repl-result', id: event.data.id, output: '', error: result.replError })
         return

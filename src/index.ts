@@ -5,7 +5,10 @@ export type { GlPythonWorkspaceProps, CoreStrings, WorkspaceCapabilities, Worksp
 
 export {
   GLPYTHON_EMBED_PROTOCOL_VERSION,
+  GLPYTHON_FILE_PATH,
+  GLPYTHON_MAX_FILES,
   GLPYTHON_MAX_SOURCE_LENGTH,
+  GLPYTHON_SUPPORTED_PROTOCOL_VERSIONS,
   isEmbedMode,
   parseParentMessage,
   parseParentOrigin,
@@ -13,6 +16,8 @@ export {
 export type {
   EmbedMode,
   GlPythonChildMessage,
+  GlPythonFile,
+  GlPythonProtocolVersion,
   GlPythonErrorMessage,
   GlPythonLoadMessage,
   GlPythonResetMessage,
