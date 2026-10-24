@@ -175,6 +175,10 @@ origin that is allowed to communicate with it:
 https://example.test/embed/?parentOrigin=https%3A%2F%2Fcourse.example
 ```
 
+An optional `lang` query parameter sets the UI language: `de` (or a regional
+variant such as `de-CH`) for German, anything else for English. The strings
+are worded as in the glpython IDE (`src/embed/strings.ts`).
+
 It sends `glpython:ready` with runtime capabilities, accepts versioned
 `glpython:load`, `glpython:run`, `glpython:visualize`, and `glpython:reset`
 messages, and sends `glpython:resize` as its content size changes. `run` and
