@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { GlPythonWorkspace, type WorkspaceCommand } from '../GlPythonWorkspace'
 import {
   isEmbedMode,
@@ -36,6 +36,21 @@ function createEmbedProject(source: string, files?: GlPythonFile[], mainFile?: s
 
 // Optional preset for the visualizer's box/substitution mode, e.g. from a
 // LiaScript block's macro option: "?visualizer=box".
+// Optional "?features=run,repl,visualize,…" from the macro's features=
+// option: which of the embed's own parts to show (here: the REPL, the
+// visualizer and the → chain export). Without it, everything shows.
+const features = (() => {
+  const list = new URLSearchParams(window.location.search).get('features')
+  const enabled = list === null ? null : new Set(list.split(',').map((feature) => feature.trim()))
+  return (feature: string) => enabled === null || enabled.has(feature)
+})()
+
+// "?size=large" (the macro's large option): bigger code, and with
+// "&visualizerHeight=600" the visualizer at least that many pixels tall (the
+// macro passes 60% of the course window; the iframe follows its content).
+const isLarge = new URLSearchParams(window.location.search).get('size') === 'large'
+const largeVisualizerHeight = Number(new URLSearchParams(window.location.search).get('visualizerHeight')) || null
+
 function visualizerModeFromLocation(): VisualizerMode | undefined {
   const mode = new URLSearchParams(window.location.search).get('visualizer')
   return mode === 'box' || mode === 'substitution' ? mode : undefined
@@ -142,7 +157,8 @@ export function App() {
 
   return (
     <main
-      className={`embed-app embed-app--${mode}`}
+      className={`embed-app embed-app--${mode}${isLarge ? ' embed-app--large' : ''}`}
+      style={isLarge && largeVisualizerHeight ? { '--glp-large-visualizer-height': `${largeVisualizerHeight}px` } as CSSProperties : undefined}
       data-input-available={typeof SharedArrayBuffer !== 'undefined'}
       ref={rootRef}
     >
@@ -167,9 +183,10 @@ export function App() {
           breadcrumbs: false,
           fileTabs: false,
           resetOutput: false,
-          visualization: mode !== 'turtle',
+          visualization: mode !== 'turtle' && features('visualize'),
           graphics: mode === 'turtle',
-          repl: mode === 'eval',
+          repl: mode === 'eval' && features('repl'),
+          export: features('export'),
         }}
       />
     </main>
