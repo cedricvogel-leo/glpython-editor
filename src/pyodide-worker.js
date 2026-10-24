@@ -1,3 +1,4 @@
+import doctestRuntime from './runtime/doctests.py?raw'
 import turtleModule from './runtime/gturtle.py?raw'
 import inputPreamble from './runtime/input_bridge.py?raw'
 import sessionRuntime from './runtime/session.py?raw'
@@ -10,6 +11,10 @@ let mountedFiles = []
 // rather than from whatever the editor holds now.
 let lastRunFiles = {}
 let lastRunMainFile = 'main.py'
+// The same for the last Tests run, whose definitions a failing example is
+// visualized against.
+let lastTestFiles = {}
+let lastTestMainFile = 'main.py'
 const REPL_PATH = '<repl>'
 let inputControl = null
 let inputPayload = null
@@ -27,6 +32,7 @@ async function getPyodide() {
       await pyodide.runPythonAsync(inputPreamble)
       await pyodide.runPythonAsync(sessionRuntime)
       await pyodide.runPythonAsync(visualizerRuntime)
+      await pyodide.runPythonAsync(doctestRuntime)
       return pyodide
     })
   }
@@ -125,6 +131,23 @@ self.onmessage = async (event) => {
     return
   }
 
+  if (event.data.type === 'test') {
+    let output = ''
+    try {
+      const pyodide = await getPyodide()
+      await mountProjectFiles(pyodide, event.data.project.files)
+      lastTestFiles = event.data.project.files
+      lastTestMainFile = event.data.project.mainFile
+      pyodide.setStdout({ batched: (text) => { output += `${text}\n` } })
+      pyodide.setStderr({ batched: (text) => { output += `${text}\n` } })
+      const result = JSON.parse(String(callPython(pyodide, '_glpython_run_doctests', `/${event.data.project.mainFile}`)))
+      self.postMessage({ type: 'test-result', output, ...result })
+    } catch (error) {
+      self.postMessage({ type: 'test-result', output, error: String(error) })
+    }
+    return
+  }
+
   if (event.data.type === 'repl') {
     let output = ''
     try {
@@ -145,12 +168,14 @@ self.onmessage = async (event) => {
       const pyodide = await getPyodide()
       // Nothing may have been run or visualized yet in this worker.
       if (!pyodide.FS.analyzePath('/gturtle.py').exists) pyodide.FS.writeFile('/gturtle.py', turtleModule)
-      const result = JSON.parse(String(callPython(pyodide, '_glpython_run_visual_repl', event.data.source, JSON.stringify(lastRunFiles), lastRunMainFile)))
+      const fromTests = event.data.namespace === 'test'
+      const files = fromTests ? lastTestFiles : lastRunFiles
+      const result = JSON.parse(String(callPython(pyodide, '_glpython_run_visual_repl', event.data.source, JSON.stringify(files), fromTests ? lastTestMainFile : lastRunMainFile, fromTests ? 'test' : 'repl')))
       if ('replError' in result) {
         self.postMessage({ type: 'repl-result', id: event.data.id, output: '', error: result.replError })
         return
       }
-      self.postMessage({ type: 'trace-result', ...result, rootPath: REPL_PATH, sources: { ...lastRunFiles, [REPL_PATH]: event.data.source } })
+      self.postMessage({ type: 'trace-result', ...result, rootPath: REPL_PATH, sources: { ...files, [REPL_PATH]: event.data.source } })
     } catch (error) {
       self.postMessage({ type: 'trace-result', trace: [], ast: {}, output: '', graphics: [], error: String(error), truncated: false })
     }

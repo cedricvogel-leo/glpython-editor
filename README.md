@@ -131,6 +131,23 @@ exported. The **Comments** checkbox turns the comments off; it is remembered per
 browser. Texts: `copyChain`, `copyChainDone`, `copyChainFailed`,
 `copyChainComments`, `chainConditionComment`, `chainLocalsComment`.
 
+### Tests (doctests)
+
+The **Tests** button (capability `tests`, a `test` command for editor-free
+hosts) runs the doctests in the docstrings of the file that would run, as
+`python -m doctest` does: the file is loaded as a module named after it, so an
+`if __name__ == "__main__":` block doesn't run. The output panel shows how many
+examples passed, then each failing example in doctest's own words (`Failed
+example:`, `Expected:`, `Got:` stay untranslated) with a button that visualizes
+that example step by step against the same definitions. An example that printed
+what was expected but returned `None` passes, as in doctest, with a separate
+glpython hint that it probably should `return` instead. Texts: `runTests`,
+`testsRunning`, `testsSummary`, `testsNone`, `testsLoadError`,
+`visualizeExample`, `testsPrintHint`.
+
+Call boxes in the visualizer show a function without its comments and
+docstring, which don't change what runs; the file itself is shown as written.
+
 ### REPL
 
 Below the output panel, a `>>>` input line runs Python in the namespace of the
@@ -209,10 +226,11 @@ Protocol version 2 adds programs of several files: `load`, `run` and `visualize`
 may carry `files` (`{ path, source }`, each path a Python module name such as
 `parser.py`, at most `GLPYTHON_MAX_FILES`) and `mainFile`, the file to run;
 `source` stays the code of that file. Only the file to run is traced; imported
-files run as a black box. The embed still accepts version 1 and answers every
-parent in the version that parent last used (version 1 until it hears
-otherwise), so older parents keep working. `glpython:ready` reports
-`capabilities.files`.
+files run as a black box. Version 3 adds `glpython:test` (same fields as
+`run`), which runs the doctests of that file. The embed still accepts every
+earlier version and answers every parent in the version that parent last used
+(version 1 until it hears otherwise), so older parents keep working.
+`glpython:ready` reports `capabilities.files` and `capabilities.tests`.
 
 ```ts
 iframe.contentWindow?.postMessage({

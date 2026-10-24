@@ -101,10 +101,10 @@ export function App() {
       setMode(nextMode)
       setIsGraphicsOpen(nextMode === 'turtle')
       setProject(createEmbedProject(message.source, message.files, message.mainFile))
-      if (message.type === 'glpython:run' || message.type === 'glpython:visualize') {
+      if (message.type === 'glpython:run' || message.type === 'glpython:visualize' || message.type === 'glpython:test') {
         setCommand({
           id: ++commandIdRef.current,
-          type: message.type === 'glpython:run' ? 'run' : 'visualize',
+          type: message.type === 'glpython:run' ? 'run' : message.type === 'glpython:visualize' ? 'visualize' : 'test',
         })
       } else {
         setCommand(null)
@@ -117,6 +117,7 @@ export function App() {
       capabilities: {
         input: typeof SharedArrayBuffer !== 'undefined',
         files: true,
+        tests: true,
       },
     })
     return () => window.removeEventListener('message', onMessage)

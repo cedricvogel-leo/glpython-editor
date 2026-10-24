@@ -1294,14 +1294,17 @@ def _glpython_run_visual(main_path, file_paths_json):
 # files as they were at that Run (the editor may have changed since), which
 # is also what the UI must render the call boxes from. An input that doesn't
 # parse isn't traced at all: it reports its error line like a REPL input.
-def _glpython_run_visual_repl(source, sources_json, main_path):
+def _glpython_run_visual_repl(source, sources_json, main_path, namespace="repl"):
   try:
     ast.parse(source, _GLPYTHON_REPL_PATH, "exec")
   except SyntaxError as error:
     return json.dumps({"replError": _glpython_error_message(error)})
   sources = {path: code for path, code in json.loads(sources_json).items() if path.endswith(".py")}
   sources[_GLPYTHON_REPL_PATH] = source
-  return _glpython_trace_program(_GLPYTHON_REPL_PATH, sources, lambda scope, trees: _glpython_fill_scope_from_repl(scope, trees, main_path))
+  # A failing doctest example is traced against the definitions the Tests run
+  # loaded (see doctests.py), a REPL input against the last Run's.
+  values = _glpython_test_namespace if namespace == "test" else _glpython_repl_namespace
+  return _glpython_trace_program(_GLPYTHON_REPL_PATH, sources, lambda scope, trees: _glpython_fill_scope_from_repl(scope, trees, main_path, values))
 
 # Fills the traced module scope from the REPL namespace. Functions the last
 # Run defined at the top level of the file it ran are swapped for this
@@ -1310,7 +1313,7 @@ def _glpython_run_visual_repl(source, sources_json, main_path):
 # parser.py) stay opaque callables, as they are when visualizing the file.
 # Other values are deep-copied where possible, so the visualization is a dry
 # run that leaves the REPL's own lists etc. untouched.
-def _glpython_fill_scope_from_repl(scope, trees, main_path):
+def _glpython_fill_scope_from_repl(scope, trees, main_path, values):
   global _glpython_current_path
   import copy
   defs = {}
@@ -1320,7 +1323,7 @@ def _glpython_fill_scope_from_repl(scope, trees, main_path):
     for node in tree.body:
       if isinstance(node, ast.FunctionDef):
         defs[("/" + path, node.name, node.lineno)] = (path, node)
-  for name, value in _glpython_repl_namespace.items():
+  for name, value in values.items():
     if name == "__builtins__":
       continue
     if isinstance(value, _glpython_types.FunctionType):
@@ -1335,6 +1338,40 @@ def _glpython_fill_scope_from_repl(scope, trees, main_path):
       except Exception:
         pass
     scope.vars[name] = value
+
+# What call boxes leave out of a function's source: comments and docstrings,
+# which don't change what Python executes. Each entry is [line, col, end
+# line, end col] (lines 1-based, columns in characters); an entry that only
+# covers whitespace and a comment or docstring removes its whole lines.
+def _glpython_hidden_ranges(source, tree):
+  import io
+  import tokenize
+  lines = source.split("\n")
+  ranges = []
+  try:
+    for token in tokenize.generate_tokens(io.StringIO(source).readline):
+      if token.type != tokenize.COMMENT:
+        continue
+      (row, col), (end_row, end_col) = token.start, token.end
+      before = lines[row - 1][:col]
+      if before.strip():
+        # A comment after code: drop it together with the spaces before it.
+        ranges.append([row, len(before.rstrip()), end_row, end_col])
+      else:
+        ranges.append([row, 0, row + 1, 0])
+  except (tokenize.TokenError, IndentationError, SyntaxError):
+    pass
+  for node in ast.walk(tree):
+    if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) or not node.body:
+      continue
+    first = node.body[0]
+    if not (isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str)):
+      continue
+    # Only a docstring on lines of its own (not "def f(): \"\"\"doc\"\"\"; ...").
+    if lines[first.lineno - 1][:first.col_offset].strip() or first.lineno == node.lineno:
+      continue
+    ranges.append([first.lineno, 0, first.end_lineno + 1, 0])
+  return ranges
 
 def _glpython_trace_program(main_path, sources, fill_scope):
   global _glpython_trace_log, _glpython_step_count, _glpython_stdout_len, _glpython_graphics_commands
@@ -1354,6 +1391,7 @@ def _glpython_trace_program(main_path, sources, fill_scope):
     sys.path.insert(0, "/")
 
   ast_by_file = {}
+  hidden_by_file = {}
   trees = {}
   source_lines = {}
   counter = [0]
@@ -1364,6 +1402,7 @@ def _glpython_trace_program(main_path, sources, fill_scope):
       _glpython_preprocess(tree, source, counter)
       trees[path] = tree
       ast_by_file[path] = _glpython_ast_to_dict(tree)
+      hidden_by_file[path] = _glpython_hidden_ranges(source, tree)
     except Exception as parse_error:
       ast_by_file[path] = {"error": _glpython_safe_repr(parse_error, 300)}
 
@@ -1417,6 +1456,7 @@ def _glpython_trace_program(main_path, sources, fill_scope):
   return json.dumps({
     "trace": _glpython_trace_log,
     "ast": ast_by_file,
+    "hidden": hidden_by_file,
     "output": capture.getvalue(),
     "graphics": gturtle.commands,
     "error": error_text,

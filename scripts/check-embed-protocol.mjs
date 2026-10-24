@@ -80,10 +80,10 @@ assert.equal(parseParentMessage({
 }), null)
 
 // Version 1 (a single source) is still accepted, without files.
-assert.equal(GLPYTHON_EMBED_PROTOCOL_VERSION, 2)
+assert.equal(GLPYTHON_EMBED_PROTOCOL_VERSION, 3)
 assert.deepEqual(parseParentMessage({ type: 'glpython:run', version: 1, source: 'print(1)', mode: 'eval' }), { type: 'glpython:run', version: 1, source: 'print(1)', mode: 'eval' })
 assert.equal(parseParentMessage({ type: 'glpython:run', version: 1, source: 'x', files: [{ path: 'main.py', source: 'x' }], mainFile: 'main.py' }), null)
-assert.equal(parseParentMessage({ type: 'glpython:reset', version: 3 }), null)
+assert.equal(parseParentMessage({ type: 'glpython:reset', version: 4 }), null)
 
 // Version 2: a program of several files and the one to run.
 const program = {
@@ -107,6 +107,14 @@ for (const path of ['../evil.py', 'sub/dir.py', 'main.txt', '1abc.py', 'main.py.
 assert.equal(parseParentMessage({ ...program, files: [...program.files, program.files[0]] }), null)
 assert.equal(parseParentMessage({ ...program, files: Array.from({ length: GLPYTHON_MAX_FILES + 1 }, (_, i) => ({ path: `f${i}.py`, source: '' })), mainFile: 'f0.py' }), null)
 assert.equal(parseParentMessage({ ...program, files: [{ path: 'main.py', source: 'x'.repeat(GLPYTHON_MAX_SOURCE_LENGTH + 1) }] }), null)
+
+// Version 3: running the doctests, with or without files; not before version 3.
+const tests = { ...program, type: 'glpython:test', version: 3 }
+assert.deepEqual(parseParentMessage(tests), tests)
+assert.deepEqual(parseParentMessage({ type: 'glpython:test', version: 3, source: 'def f():\n    pass' }), { type: 'glpython:test', version: 3, source: 'def f():\n    pass' })
+assert.equal(parseParentMessage({ ...tests, version: 2 }), null)
+assert.equal(parseParentMessage({ type: 'glpython:test', version: 1, source: 'x' }), null)
+assert.deepEqual(parseParentMessage({ ...program, version: 3 }), { ...program, version: 3 })
 
 const readyMessage = {
   type: 'glpython:ready',
