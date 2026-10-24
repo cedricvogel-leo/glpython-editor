@@ -501,13 +501,17 @@ function Frame({ frameId, path, scope, openFrames, nodeIndexByFile, visualSource
   )
 }
 
-// A box's horizontal position within the visualizer canvas, from layout
-// offsets rather than getBoundingClientRect: a box that just opened is still
-// scaled down by its "visual-frame-grow" animation when it's measured.
-function canvasOffsetLeft(element: HTMLElement, canvas: HTMLElement): number {
+// An element's position within the visualizer canvas, from layout offsets
+// rather than getBoundingClientRect: a box that just opened is still scaled
+// down by its "visual-frame-grow" animation when it's measured.
+function canvasOffset(element: HTMLElement, canvas: HTMLElement): { left: number; top: number } {
   let left = 0
-  for (let node: HTMLElement | null = element; node && node !== canvas; node = node.offsetParent as HTMLElement | null) left += node.offsetLeft
-  return left
+  let top = 0
+  for (let node: HTMLElement | null = element; node && node !== canvas; node = node.offsetParent as HTMLElement | null) {
+    left += node.offsetLeft
+    top += node.offsetTop
+  }
+  return { left, top }
 }
 
 function ReplTranscriptEntry({ entry, definitionHint }: { entry: ReplEntry; definitionHint: string }) {
@@ -1269,9 +1273,9 @@ function GlPythonWorkspace(props: GlPythonWorkspaceProps) {
   // ordinary DOM scrolling - directly replacing the old Monaco
   // view-zone/content-widget machinery, whose geometry bookkeeping across
   // four separate systems was the root cause of the previous scrolling
-  // bugs. 'nearest' avoids jumping the view around on every single step,
-  // only scrolling when the active line would otherwise leave the
-  // viewport (e.g. stepping into/out of a deeply nested call).
+  // bugs. It only scrolls when the active line would otherwise leave the
+  // view (e.g. stepping into/out of a deeply nested call), rather than
+  // jumping the view around on every single step.
   //
   // Horizontally, nested call boxes can be wider than the view (each one
   // sits at its call site, indented by the code before it), so it instead
@@ -1279,33 +1283,44 @@ function GlPythonWorkspace(props: GlPythonWorkspaceProps) {
   // into view, outer boxes may slide off to the left, and if the box doesn't
   // fit (e.g. it already holds the next call's box) the innermost box wins.
   // Only steps scroll, so the learner can still scroll around in between.
+  //
+  // Both directions scroll only this view, never the page around it
+  // (scrollIntoView would also scroll e.g. a LiaScript course page, even
+  // across origins, moving the step buttons out from under the mouse).
   useEffect(() => {
     if (!isVisualizing) return
     const container = visualizerScrollRef.current
     const canvas = visualizerCanvasRef.current
     const root = canvas?.querySelector<HTMLElement>('.frame-box--root')
     if (!container || !canvas || !root) return
-    const previousScrollLeft = container.scrollLeft
-    container.querySelector('.visual-current-line')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-    container.scrollLeft = previousScrollLeft
+    const margin = 12
+
+    let nextTop = container.scrollTop
+    const line = root.querySelector<HTMLElement>('.visual-current-line')
+    if (line) {
+      const canvasTop = canvas.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop
+      const top = canvasTop + canvasOffset(line, canvas).top
+      const bottom = top + line.offsetHeight
+      if (top - margin < nextTop) nextTop = top - margin
+      else if (bottom + margin > nextTop + container.clientHeight) nextTop = bottom + margin - container.clientHeight
+    }
 
     const frameId = currentTraceStep?.frameId ?? 0
     const active = frameId === 0 ? root : root.querySelector<HTMLElement>(`.frame-box[data-frame-id="${frameId}"]`) ?? root
     // Open boxes form one chain, so there's at most one box without boxes inside.
     const innermost = [...root.querySelectorAll<HTMLElement>('.frame-box')].find((box) => !box.querySelector('.frame-box')) ?? null
     const span = (box: HTMLElement) => {
-      const left = canvasOffsetLeft(box, canvas)
+      const left = canvasOffset(box, canvas).left
       return { left, right: left + box.offsetWidth }
     }
-    const margin = 12
     const room = container.clientWidth - 2 * margin
     let target = active !== root ? span(active) : innermost ? span(innermost) : { left: 0, right: 0 }
     if (target.right - target.left > room && innermost) target = span(innermost)
     if (target.right - target.left > room) target = { left: target.left, right: target.left + room }
-    let next = container.scrollLeft
-    if (target.left - margin < next) next = target.left - margin
-    else if (target.right + margin > next + container.clientWidth) next = target.right + margin - container.clientWidth
-    container.scrollTo({ left: Math.max(0, next), behavior: animationsEnabledRef.current ? 'smooth' : 'auto' })
+    let nextLeft = container.scrollLeft
+    if (target.left - margin < nextLeft) nextLeft = target.left - margin
+    else if (target.right + margin > nextLeft + container.clientWidth) nextLeft = target.right + margin - container.clientWidth
+    container.scrollTo({ left: Math.max(0, nextLeft), top: Math.max(0, nextTop), behavior: animationsEnabledRef.current ? 'smooth' : 'auto' })
   }, [isVisualizing, currentTraceStep])
 
   // Auto-play: advance one step every 500ms while playing, stopping at the
