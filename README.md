@@ -116,6 +116,21 @@ The mode last chosen is remembered per browser. A host can preset it with the
 texts are `visualizerModeLabel`, `visualizerModeBox` and
 `visualizerModeSubstitution`, all optional like `visualizerBoxHint`.
 
+### Copying the evaluation as a → chain
+
+The toolbar's **Copy → chain** button copies the evaluation of the statement
+the scrubber is on (for a visualized REPL input: that input) in the course's
+paper notation: its expression, then one line per change, each starting with
+`→`, taking the same steps as the visualizer. A call to a function with a single
+`return <expression>` is replaced as in substitution mode. Any other call is
+replaced by the expression of the return it executed, with its parameters and
+local variables already filled in, and a comment naming the condition that
+chose that return (`# 2 == 0 is False`) and whether its body has local
+variables. A failing run ends with Python's error line. Definitions are never
+exported. The **Comments** checkbox turns the comments off; it is remembered per
+browser. Texts: `copyChain`, `copyChainDone`, `copyChainFailed`,
+`copyChainComments`, `chainConditionComment`, `chainLocalsComment`.
+
 ### REPL
 
 Below the output panel, a `>>>` input line runs Python in the namespace of the
