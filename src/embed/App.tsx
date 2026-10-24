@@ -10,7 +10,7 @@ import {
 } from '../embedProtocol'
 import { updateProjectFile, type Project } from '../project'
 import type { VisualizerMode } from '../visualizer'
-import { embedStrings } from './strings'
+import { embedLocaleFromLanguage, embedStrings } from './strings'
 
 const defaultSource = 'print("Hello from glpython")'
 
@@ -36,6 +36,10 @@ function visualizerModeFromLocation(): VisualizerMode | undefined {
   const mode = new URLSearchParams(window.location.search).get('visualizer')
   return mode === 'box' || mode === 'substitution' ? mode : undefined
 }
+
+// The UI language, from the host's "?lang=" (e.g. the LiaScript course's).
+const embedLocale = embedLocaleFromLanguage(new URLSearchParams(window.location.search).get('lang'))
+document.documentElement.lang = embedLocale
 
 function modeFromLocation(): EmbedMode {
   const mode = new URLSearchParams(window.location.search).get('mode')
@@ -144,7 +148,7 @@ export function App() {
         onFileCodeChange={(path, code) => setProject((current) => updateProjectFile(current, path, code))}
         isGraphicsOpen={isGraphicsOpen}
         onGraphicsOpenChange={setIsGraphicsOpen}
-        t={embedStrings}
+        t={embedStrings[embedLocale]}
         compact
         capabilities={{
           actions: false,
