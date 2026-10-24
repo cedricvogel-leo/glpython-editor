@@ -138,6 +138,30 @@ export type TraceResult = {
   // Just the traceback's last line, e.g. "ZeroDivisionError: division by zero".
   errorMessage?: string | null
   truncated: boolean
+  // Per file, what call boxes leave out: comments and docstrings, as
+  // [line, col, end line, end col] (see _glpython_hidden_ranges).
+  hidden?: Record<string, Array<[number, number, number, number]>>
+}
+
+// A file's hidden ranges (see TraceResult.hidden) as character ranges that
+// lie entirely inside `within`, ready to be removed from a call box's text.
+export function hiddenRangesWithin(ranges: Array<[number, number, number, number]> | undefined, lineOffsets: number[], sourceLength: number, within: { start: number; end: number }): Array<{ start: number; end: number }> {
+  const offsetOf = (line: number, col: number) => line - 1 < lineOffsets.length ? Math.min(sourceLength, lineOffsets[line - 1] + col) : sourceLength
+  return (ranges ?? [])
+    .map(([line, col, endLine, endCol]) => ({ start: offsetOf(line, col), end: offsetOf(endLine, endCol) }))
+    .filter((range) => range.start < range.end && range.start >= within.start && range.end <= within.end)
+}
+
+// The lines that removals take out completely (from their start up to the
+// next line's start), so a call box can map its rendered lines back to the
+// original line numbers.
+export function removedLines(removals: Array<{ start: number; end: number }>, lineOffsets: number[], sourceLength: number): Set<number> {
+  const removed = new Set<number>()
+  lineOffsets.forEach((start, index) => {
+    const end = index + 1 < lineOffsets.length ? lineOffsets[index + 1] : sourceLength
+    if (removals.some((range) => range.start <= start && range.end >= end && end > start)) removed.add(index + 1)
+  })
+  return removed
 }
 
 // Builds a nodeId -> AstNode index for one parsed file, so steps can be
@@ -496,11 +520,12 @@ export function nodeHeadRange(node: AstNode, lineOffsets: number[]): { start: nu
 // annotation's rendered span (e.g. to anchor a connector arrow at a
 // specific bound parameter's "=3", not just "some annotation on this
 // line").
-type MergedInsert = { start: number; end: number; value: string; kind: 'substitution' | 'annotation'; nodeId?: number }
+type MergedInsert = { start: number; end: number; value: string; kind: 'substitution' | 'annotation' | 'removal'; nodeId?: number }
 
 // The source the substitutions apply to, and the part of it being rendered
-// (null: all of it) - needed to drop grouping parentheses, see below.
-export type SubstitutionContext = { source: string; limit: { start: number; end: number } | null }
+// (null: all of it) - needed to drop grouping parentheses, see below - plus
+// ranges to leave out entirely (a call box's comments and docstring).
+export type SubstitutionContext = { source: string; limit: { start: number; end: number } | null; removals?: Array<{ start: number; end: number }> }
 
 const PYTHON_KEYWORDS_BEFORE_PARENS = new Set(['and', 'or', 'not', 'in', 'is', 'if', 'elif', 'else', 'while', 'for', 'return', 'yield', 'lambda', 'await', 'assert', 'del', 'with', 'from', 'import', 'raise'])
 
@@ -585,9 +610,18 @@ function buildMergedInserts(
     inserts.push({ start: range.end, end: range.end, value: text, kind: 'annotation', nodeId })
   }
 
+  // Removals (comments, docstrings) never overlap evaluated code; skip any
+  // that would, rather than garble a substituted value.
+  const removals = (context?.removals ?? [])
+    .filter((removal) => !selected.some((s) => removal.start < s.end && removal.end > s.start))
+    .sort((a, b) => a.start - b.start)
+    .filter((removal, index, all) => index === 0 || removal.start >= all[index - 1].end)
+    .map((removal) => ({ ...removal, value: '', kind: 'removal' as const }))
+
   return [
     ...selected.map((s) => ({ ...s, kind: 'substitution' as const })),
     ...inserts,
+    ...removals,
   ].sort((a, b) => a.start - b.start || (a.kind === 'substitution' ? -1 : 1))
 }
 
@@ -635,12 +669,13 @@ export function applySubstitutions(
   substitutions: Map<number, string> | undefined,
   annotations?: Map<number, string>,
   limit: { start: number; end: number } | null = null,
+  removals: Array<{ start: number; end: number }> = [],
 ): { text: string; highlights: Array<{ start: number; end: number; nodeId?: number }>; annotationHighlights: Array<{ start: number; end: number; nodeId?: number }> } {
-  if ((!substitutions || substitutions.size === 0) && (!annotations || annotations.size === 0)) {
+  if ((!substitutions || substitutions.size === 0) && (!annotations || annotations.size === 0) && removals.length === 0) {
     return { text: source, highlights: [], annotationHighlights: [] }
   }
 
-  const merged = buildMergedInserts(lineOffsets, nodeIndex, substitutions, annotations, { source, limit })
+  const merged = buildMergedInserts(lineOffsets, nodeIndex, substitutions, annotations, { source, limit, removals })
 
   let text = ''
   let cursor = 0
@@ -683,8 +718,9 @@ export function renderFrameSource(
   clipRange: { start: number; end: number } | null,
   substitutions: Map<number, string> | undefined,
   annotations: Map<number, string> | undefined,
+  removals: Array<{ start: number; end: number }> = [],
 ): { text: string; highlights: Array<{ start: number; end: number; nodeId?: number }>; annotationHighlights: Array<{ start: number; end: number; nodeId?: number }> } | null {
-  const { text, highlights, annotationHighlights } = applySubstitutions(source, lineOffsets, nodeIndex, substitutions, annotations, clipRange)
+  const { text, highlights, annotationHighlights } = applySubstitutions(source, lineOffsets, nodeIndex, substitutions, annotations, clipRange, removals)
   if (!clipRange) return { text, highlights, annotationHighlights }
 
   const tailLength = source.length - clipRange.end

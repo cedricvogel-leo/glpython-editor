@@ -24,6 +24,7 @@ export type {
   GlPythonRunMessage,
   GlPythonSourceMessage,
   GlPythonVisualizeMessage,
+  GlPythonTestMessage,
   GlPythonParentMessage,
   GlPythonReadyMessage,
   GlPythonResizeMessage,
