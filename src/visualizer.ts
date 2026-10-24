@@ -85,6 +85,19 @@ export type TraceStep = {
   // Only on "call-enter" steps of a function that qualifies for the
   // substitution mode (a single "return <expression>"): see ShortForm.
   shortForm?: ShortForm | null
+  // For the evaluation chain export (see buildEvaluationChain). On
+  // "call-enter": whether an operator works on the call's value, and whether
+  // the function has local variables or loops.
+  inOperator?: boolean
+  hasLocals?: boolean
+  // On the closing "eval" step of a call: the value node of the return that
+  // ran (null for a bare return; absent if the function ended without one),
+  // and [name node id, value text] for the call's own variables read in it.
+  returnNodeId?: number | null
+  returnNames?: Array<[number, string]>
+  // On an "if" statement's "branch" step: its condition with the names
+  // replaced by their values, e.g. "2 == 0".
+  conditionText?: string | null
 }
 
 // How a qualifying call is shown in the substitution mode: replaced at its
@@ -485,6 +498,40 @@ export function nodeHeadRange(node: AstNode, lineOffsets: number[]): { start: nu
 // line").
 type MergedInsert = { start: number; end: number; value: string; kind: 'substitution' | 'annotation'; nodeId?: number }
 
+// The source the substitutions apply to, and the part of it being rendered
+// (null: all of it) - needed to drop grouping parentheses, see below.
+export type SubstitutionContext = { source: string; limit: { start: number; end: number } | null }
+
+const PYTHON_KEYWORDS_BEFORE_PARENS = new Set(['and', 'or', 'not', 'in', 'is', 'if', 'elif', 'else', 'while', 'for', 'return', 'yield', 'lambda', 'await', 'assert', 'del', 'with', 'from', 'import', 'raise'])
+
+// Once a value replaces an expression that its own parentheses group, as in
+// "1 / (2 + x)" -> "1 / 0", the parentheses go with it - as in the course's
+// paper notation. Call and subscript parentheses ("f(2 + x)") stay, and so do
+// the parentheses around a negative value ("(-2) ** 2" means something
+// else without them). Never reaches outside the rendered part.
+function widenOverGroupingParens(context: SubstitutionContext, range: { start: number; end: number }, value: string): { start: number; end: number } {
+  if (value.startsWith('-')) return range
+  const { source, limit } = context
+  let { start, end } = range
+  for (;;) {
+    let before = start - 1
+    while (before >= 0 && /\s/.test(source[before])) before--
+    let after = end
+    while (after < source.length && /\s/.test(source[after])) after++
+    if (source[before] !== '(' || source[after] !== ')') return { start, end }
+    if (limit && (before < limit.start || after + 1 > limit.end)) return { start, end }
+    // What precedes the "(": a name, closing bracket or string ends a call
+    // or subscript, unless the name is a keyword ("return (x + 1)").
+    let previous = before - 1
+    while (previous >= 0 && /[ \t]/.test(source[previous])) previous--
+    const word = /[A-Za-z_][A-Za-z0-9_]*$/.exec(source.slice(Math.max(0, previous - 40), previous + 1))?.[0]
+    const isCallOrSubscript = previous >= 0 && (word ? !PYTHON_KEYWORDS_BEFORE_PARENS.has(word) : /[)\]'"0-9]/.test(source[previous]))
+    if (isCallOrSubscript) return { start, end }
+    start = before
+    end = after + 1
+  }
+}
+
 // Shared by applySubstitutions and locateNodeRenderedRange: the sorted list
 // of every text replacement/insert that would be spliced into `source`,
 // without actually building the resulting string yet - so both "produce the
@@ -495,6 +542,7 @@ function buildMergedInserts(
   nodeIndex: Map<number, AstNode>,
   substitutions: Map<number, string> | undefined,
   annotations: Map<number, string> | undefined,
+  context?: SubstitutionContext,
 ): MergedInsert[] {
   const candidates: Array<{ start: number; end: number; value: string; nodeId: number }> = []
   for (const [nodeId, value] of substitutions ?? []) {
@@ -502,7 +550,7 @@ function buildMergedInserts(
     if (!node) continue
     const range = nodeRange(node, lineOffsets)
     if (!range) continue
-    candidates.push({ ...range, value, nodeId })
+    candidates.push({ ...(context ? widenOverGroupingParens(context, range, value) : range), value, nodeId })
   }
 
   // Larger spans first, so a containing node is selected before any
@@ -572,10 +620,11 @@ export function locateNodeRenderedRange(
   annotations: Map<number, string> | undefined,
   node: AstNode,
   useHeadOnly = false,
+  context?: SubstitutionContext,
 ): { start: number; end: number } | null {
   const range = useHeadOnly ? nodeHeadRange(node, lineOffsets) : nodeRange(node, lineOffsets)
   if (!range) return null
-  const merged = buildMergedInserts(lineOffsets, nodeIndex, substitutions, annotations)
+  const merged = buildMergedInserts(lineOffsets, nodeIndex, substitutions, annotations, context)
   return { start: locateOffset(merged, range.start), end: locateOffset(merged, range.end) }
 }
 
@@ -585,12 +634,13 @@ export function applySubstitutions(
   nodeIndex: Map<number, AstNode>,
   substitutions: Map<number, string> | undefined,
   annotations?: Map<number, string>,
+  limit: { start: number; end: number } | null = null,
 ): { text: string; highlights: Array<{ start: number; end: number; nodeId?: number }>; annotationHighlights: Array<{ start: number; end: number; nodeId?: number }> } {
   if ((!substitutions || substitutions.size === 0) && (!annotations || annotations.size === 0)) {
     return { text: source, highlights: [], annotationHighlights: [] }
   }
 
-  const merged = buildMergedInserts(lineOffsets, nodeIndex, substitutions, annotations)
+  const merged = buildMergedInserts(lineOffsets, nodeIndex, substitutions, annotations, { source, limit })
 
   let text = ''
   let cursor = 0
@@ -634,7 +684,7 @@ export function renderFrameSource(
   substitutions: Map<number, string> | undefined,
   annotations: Map<number, string> | undefined,
 ): { text: string; highlights: Array<{ start: number; end: number; nodeId?: number }>; annotationHighlights: Array<{ start: number; end: number; nodeId?: number }> } | null {
-  const { text, highlights, annotationHighlights } = applySubstitutions(source, lineOffsets, nodeIndex, substitutions, annotations)
+  const { text, highlights, annotationHighlights } = applySubstitutions(source, lineOffsets, nodeIndex, substitutions, annotations, clipRange)
   if (!clipRange) return { text, highlights, annotationHighlights }
 
   const tailLength = source.length - clipRange.end
@@ -682,4 +732,203 @@ export function buildLocalsUpTo(trace: TraceStep[], uptoStep: number, frameId = 
     if (Object.keys(step.locals).length > 0) locals = step.locals
   }
   return locals
+}
+
+// The texts the evaluation chain export needs, see buildEvaluationChain.
+export type EvaluationChainStrings = {
+  conditionComment: (condition: string, value: string) => string
+  localsComment: string
+}
+
+const CHAIN_NOT_EXPORTED = new Set(['FunctionDef', 'AsyncFunctionDef', 'ClassDef', 'Import', 'ImportFrom'])
+
+const nodeContains = (outer: AstNode, inner: AstNode) =>
+  outer.line !== undefined && outer.endLine !== undefined && inner.line !== undefined && inner.endLine !== undefined &&
+  (inner.line > outer.line || (inner.line === outer.line && (inner.col ?? 0) >= (outer.col ?? 0))) &&
+  (inner.endLine < outer.endLine || (inner.endLine === outer.endLine && (inner.endCol ?? 0) <= (outer.endCol ?? 0)))
+
+// The top-level statement of the root file (the main file, or a REPL
+// input's pseudo-file) that a step belongs to: the step's own statement if
+// it ran at module level, otherwise the statement whose call (or a call
+// inside it) the step ran in.
+function rootStatementOf(step: TraceStep, enterByFrame: Map<number, TraceStep>, rootPath: string, root: AstFile | undefined, nodeIndex: Map<number, AstNode> | undefined): AstNode | null {
+  if (!root || 'error' in root || !nodeIndex) return null
+  let frameId = step.frameId
+  let nodeId = step.nodeId
+  let path = step.path
+  if (step.kind === 'call-enter') frameId = step.parentFrameId ?? 0
+  while (frameId !== 0) {
+    const enter = enterByFrame.get(frameId)
+    if (!enter) return null
+    nodeId = enter.nodeId
+    path = enter.path
+    frameId = enter.parentFrameId ?? 0
+  }
+  if (path !== rootPath) return null
+  const node = nodeIndex.get(nodeId)
+  const body = root.fields.body
+  if (!node || !Array.isArray(body)) return null
+  return body.find((statement): statement is AstNode => statement !== null && typeof statement === 'object' && nodeContains(statement as AstNode, node)) ?? null
+}
+
+// The expression of a statement that the chain shows: an expression
+// statement's own expression, or the value of an assignment or return.
+function chainExpressionOf(statement: AstNode): AstNode | null {
+  if (CHAIN_NOT_EXPORTED.has(statement.type)) return null
+  if (!['Expr', 'Assign', 'AugAssign', 'AnnAssign', 'Return'].includes(statement.type)) return null
+  const value = statement.fields.value
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : null
+}
+
+// The evaluation of the statement the given step belongs to, written in the
+// course's paper notation: its expression, then one line per change, each
+// starting with "→". A call to a function with a single "return <expr>" is
+// replaced exactly as the substitution mode shows it; any other call by the
+// expression of the return it executed, with its parameters and local
+// variables already replaced by their values, plus a comment naming the
+// condition that chose that return (and that its body has local variables).
+// A new line starts whenever the text changes, so the chain takes the same
+// steps as the visualizer. A run that fails ends with Python's error line.
+// Returns null for a definition or a statement without an expression.
+export function buildEvaluationChain(options: {
+  trace: TraceStep[]
+  ast: Record<string, AstFile>
+  nodeIndexByFile: Map<string, Map<number, AstNode>>
+  sources: Record<string, string>
+  rootPath: string
+  step: TraceStep
+  errorMessage: string | null
+  comments: boolean
+  strings: EvaluationChainStrings
+}): string | null {
+  const { trace, ast, nodeIndexByFile, sources, rootPath, step, errorMessage, comments, strings } = options
+  const enterByFrame = new Map<number, TraceStep>()
+  const closeByFrame = new Map<number, TraceStep>()
+  const ifBranchesByFrame = new Map<number, TraceStep[]>()
+  // Each call's own steps, so replaying one call's values doesn't scan the
+  // whole trace (a deep recursion has hundreds of calls open at once).
+  const stepsByFrame = new Map<number, TraceStep[]>()
+  const lineOffsetsByPath = new Map<string, number[]>()
+  const lineOffsetsOf = (path: string, source: string) => {
+    let offsets = lineOffsetsByPath.get(path)
+    if (!offsets) lineOffsetsByPath.set(path, offsets = computeLineOffsets(source))
+    return offsets
+  }
+  for (const s of trace) {
+    const frameSteps = stepsByFrame.get(s.frameId)
+    if (frameSteps) frameSteps.push(s)
+    else stepsByFrame.set(s.frameId, [s])
+    if (s.kind === 'call-enter') enterByFrame.set(s.frameId, s)
+    if (s.closesFrameId !== null && s.closesFrameId !== undefined) closeByFrame.set(s.closesFrameId, s)
+    if (s.kind === 'branch' && s.conditionText) {
+      const branches = ifBranchesByFrame.get(s.frameId)
+      if (branches) branches.push(s)
+      else ifBranchesByFrame.set(s.frameId, [s])
+    }
+  }
+
+  const rootIndex = nodeIndexByFile.get(rootPath)
+  const statement = rootStatementOf(step, enterByFrame, rootPath, ast[rootPath], rootIndex)
+  const expression = statement ? chainExpressionOf(statement) : null
+  if (!statement || !expression) return null
+  const steps = trace.filter((s) => rootStatementOf(s, enterByFrame, rootPath, ast[rootPath], rootIndex) === statement)
+  if (steps.length === 0) return null
+
+  // `clip`'s text in `path` as of `uptoStep`, with `frameId`'s substituted
+  // values (plus `preset` ones) and every call open inside it replaced in turn.
+  const render = (path: string, frameId: number, clip: AstNode, preset: Array<[number, string]>, uptoStep: number, openFrames: Map<number, OpenFrame>): { text: string; isSingleValue: boolean } | null => {
+    const nodeIndex = nodeIndexByFile.get(path)
+    const source = sources[path]
+    const lineOffsets = source !== undefined ? lineOffsetsOf(path, source) : null
+    const clipRange = nodeIndex && lineOffsets ? nodeRange(clip, lineOffsets) : null
+    if (!nodeIndex || source === undefined || !lineOffsets || !clipRange) return null
+    // Only values inside the clipped expression: a value substituted earlier
+    // in the same file (e.g. an "if" in the box above) would shift the clip.
+    const inClip = (nodeId: number) => {
+      const node = nodeIndex.get(nodeId)
+      const range = node ? nodeRange(node, lineOffsets) : null
+      return range !== null && range.start >= clipRange.start && range.end <= clipRange.end
+    }
+    const substitutions = new Map<number, string>(preset.filter(([nodeId]) => inClip(nodeId)))
+    for (const [nodeId, value] of buildSubstitutionsUpTo(stepsByFrame.get(frameId) ?? [], uptoStep, frameId).get(path) ?? []) if (inClip(nodeId)) substitutions.set(nodeId, value)
+    const rendered = renderFrameSource(source, lineOffsets, nodeIndex, clipRange, substitutions, undefined)
+    if (!rendered) return null
+    let text = rendered.text
+    const children = [...openFrames.values()]
+      .filter((frame) => frame.parentFrameId === frameId && frame.anchorPath === path)
+      .map((frame) => {
+        const anchor = nodeIndex.get(frame.anchorNodeId)
+        const range = anchor && inClip(anchor.id) ? locateNodeRenderedRange(lineOffsets, nodeIndex, substitutions, undefined, anchor, false, { source, limit: clipRange }) : null
+        return range ? { frame, start: range.start - clipRange.start, end: range.end - clipRange.start } : null
+      })
+      .filter((child): child is { frame: OpenFrame; start: number; end: number } => child !== null)
+      .sort((a, b) => b.start - a.start)
+    for (const child of children) {
+      const replacement = callText(child.frame, uptoStep, openFrames)
+      if (replacement !== null) text = text.slice(0, child.start) + replacement + text.slice(child.end)
+    }
+    return { text, isSingleValue: substitutions.has(clip.id) || clip.type === 'Constant' }
+  }
+
+  // What an open call is replaced by (null keeps the call as written, e.g. a
+  // call that failed before reaching a return).
+  const callText = (frame: OpenFrame, uptoStep: number, openFrames: Map<number, OpenFrame>): string | null => {
+    const enter = enterByFrame.get(frame.frameId)
+    const nodeIndex = nodeIndexByFile.get(frame.funcDefPath)
+    if (!enter || !nodeIndex) return null
+    let clipId: number | null | undefined
+    let preset: Array<[number, string]>
+    if (enter.shortForm) {
+      clipId = enter.shortForm.returnNodeId
+      preset = enter.shortForm.paramValues
+    } else {
+      const close = closeByFrame.get(frame.frameId)
+      if (!close || close.returnNodeId === undefined) return null
+      if (close.returnNodeId === null) return 'None'
+      clipId = close.returnNodeId
+      preset = close.returnNames ?? []
+    }
+    const clip = clipId !== null && clipId !== undefined ? nodeIndex.get(clipId) : undefined
+    const rendered = clip ? render(frame.funcDefPath, frame.frameId, clip, preset, uptoStep, openFrames) : null
+    if (!rendered) return null
+    return enter.inOperator && !rendered.isSingleValue ? `(${rendered.text})` : rendered.text
+  }
+
+  const textAt = (uptoStep: number) => {
+    const rendered = render(rootPath, 0, expression, [], uptoStep, computeOpenFramesUpTo(trace, uptoStep))
+    return rendered ? rendered.text.replace(/\s*\n\s*/g, ' ') : null
+  }
+
+  const commentFor = (s: TraceStep) => {
+    if (!comments || s.kind !== 'call-enter' || s.shortForm) return null
+    const parts: string[] = []
+    const decidingIf = ifBranchesByFrame.get(s.frameId)?.at(-1)
+    if (decidingIf?.conditionText) parts.push(strings.conditionComment(decidingIf.conditionText, decidingIf.valueText === 'true' ? 'True' : 'False'))
+    if (s.hasLocals) parts.push(strings.localsComment)
+    return parts.length > 0 ? parts.join('; ') : null
+  }
+
+  const first = textAt(steps[0].step - 1)
+  if (first === null) return null
+  const lines: Array<{ text: string; comment: string | null }> = [{ text: first, comment: null }]
+  for (const s of steps) {
+    const text = textAt(s.step)
+    if (text === null || text === lines[lines.length - 1].text) continue
+    lines.push({ text, comment: commentFor(s) })
+  }
+  const lastStep = trace[trace.length - 1]
+  if (errorMessage && lastStep?.kind === 'error' && steps.includes(lastStep)) lines.push({ text: errorMessage, comment: null })
+
+  const written = lines.map((line, index) => ({ text: index === 0 ? line.text : `\u2192 ${line.text}`, comment: line.comment }))
+  const commentColumn = Math.max(0, ...written.filter((line) => line.comment !== null).map((line) => line.text.length)) + 4
+  return written.map((line) => line.comment === null ? line.text : `${line.text.padEnd(commentColumn)}# ${line.comment}`).join('\n')
+}
+
+// Whether buildEvaluationChain has something to export for this step -
+// cheap enough to decide on every step whether the copy button is enabled.
+export function hasEvaluationChain(trace: TraceStep[], ast: Record<string, AstFile>, nodeIndexByFile: Map<number, AstNode> | undefined, rootPath: string, step: TraceStep): boolean {
+  const enterByFrame = new Map<number, TraceStep>()
+  for (const s of trace) if (s.kind === 'call-enter') enterByFrame.set(s.frameId, s)
+  const statement = rootStatementOf(step, enterByFrame, rootPath, ast[rootPath], nodeIndexByFile)
+  return statement !== null && chainExpressionOf(statement) !== null
 }

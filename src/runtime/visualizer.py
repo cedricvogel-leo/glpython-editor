@@ -13,8 +13,11 @@ class _GlpythonContinue(Exception):
   pass
 
 class _GlpythonReturn(Exception):
-  def __init__(self, value):
+  def __init__(self, value, info=None):
     self.value = value
+    # Which return statement ran, for the closing step of its call (see
+    # _exec_return).
+    self.info = info
 
 # The interpreter's own non-error control flow - never tagged with an error
 # site (see _glpython_eval / _glpython_exec_stmt).
@@ -150,6 +153,9 @@ _glpython_pending_call_node = None
 # can tag its own closing "eval" step with the frame id that just finished -
 # this is what lets the UI know exactly which step collapses which box.
 _glpython_last_call_frame_id = None
+# Set alongside it: which return statement that call executed (see
+# _exec_return), or None if it ended without one.
+_glpython_last_call_return = None
 
 class _GlpythonCallDepthExceeded(Exception):
   pass
@@ -157,7 +163,7 @@ class _GlpythonCallDepthExceeded(Exception):
 def _glpython_pos(node):
   return (getattr(node, "lineno", None), getattr(node, "end_lineno", None), getattr(node, "col_offset", None), getattr(node, "end_col_offset", None))
 
-def _glpython_record(node, kind, label, value_text=None, func_name="<module>", extra_locals=None, reset_node_ids=None, annotate_node_id=None, annotate_text=None, closes_frame_id=None, force=False):
+def _glpython_record(node, kind, label, value_text=None, func_name="<module>", extra_locals=None, reset_node_ids=None, annotate_node_id=None, annotate_text=None, closes_frame_id=None, force=False, extra=None):
   global _glpython_step_count
   # `force` is only used for the final "error" step (see
   # _glpython_record_error), which must always be recorded - even for a
@@ -209,6 +215,9 @@ def _glpython_record(node, kind, label, value_text=None, func_name="<module>", e
     "lookupName": None,
     "lookupFrameId": None,
   }
+  # Fields only some kinds of step carry (see their call sites).
+  if extra:
+    entry.update(extra)
   _glpython_trace_log.append(entry)
   _glpython_step_count += 1
 
@@ -314,6 +323,11 @@ def _glpython_record_call_enter(call_node, glpython_function, frame_id, parent_f
     # place, and whether the call sits in an operator context, where the
     # replacing expression needs parentheses ("1 * (3 * 2)").
     "shortForm": short_form,
+    # For the evaluation chain export: whether the call's value is used by an
+    # operator (its replacement needs parentheses), and whether the function
+    # has local variables or loops (its replacement gets a comment).
+    "inOperator": getattr(call_node, "_glpython_in_operator", False),
+    "hasLocals": getattr(glpython_function.node, "_glpython_has_locals", False),
   }
   _glpython_trace_log.append(entry)
   _glpython_step_count += 1
@@ -556,7 +570,7 @@ class _GlpythonFunction:
     self.def_path = _glpython_current_path
 
   def __call__(self, *args, **kwargs):
-    global _glpython_call_depth, _glpython_frame_id_counter, _glpython_pending_call_node, _glpython_last_call_frame_id, _glpython_current_path
+    global _glpython_call_depth, _glpython_frame_id_counter, _glpython_pending_call_node, _glpython_last_call_frame_id, _glpython_last_call_return, _glpython_current_path
     # Consumed immediately, before anything else can overwrite it - see the
     # comment on _glpython_pending_call_node above.
     call_node = _glpython_pending_call_node
@@ -566,6 +580,7 @@ class _GlpythonFunction:
       _glpython_call_depth -= 1
       raise RecursionError("maximum interpreted recursion depth exceeded")
     frame_id = None
+    return_info = None
     try:
       call_vars = {}
       arguments = self.node.args
@@ -635,6 +650,7 @@ class _GlpythonFunction:
         _glpython_exec_stmts(self.node.body, scope)
         return None
       except _GlpythonReturn as ret:
+        return_info = ret.info
         return ret.value
       finally:
         _glpython_current_path = caller_path
@@ -643,6 +659,7 @@ class _GlpythonFunction:
           _glpython_frame_stack.pop()
     finally:
       _glpython_last_call_frame_id = frame_id
+      _glpython_last_call_return = return_info
       _glpython_call_depth -= 1
 
 def _eval_call(node, scope, suppress_none_result=False):
@@ -686,7 +703,8 @@ def _eval_call(node, scope, suppress_none_result=False):
   # expression, etc.) still show "None" normally, since that's genuinely
   # useful feedback there.
   value_text = None if (suppress_none_result and value is None) else _glpython_safe_repr(value)
-  _glpython_record(node, "eval", f"{callee_name}(...)", value_text, _glpython_current_func(), closes_frame_id=closes_frame_id)
+  return_info = _glpython_last_call_return if closes_frame_id is not None else None
+  _glpython_record(node, "eval", f"{callee_name}(...)", value_text, _glpython_current_func(), closes_frame_id=closes_frame_id, extra=return_info)
   return value
 
 def _eval_lambda(node, scope):
@@ -782,9 +800,53 @@ def _exec_expr(node, scope):
 def _exec_pass(node, scope):
   pass
 
+# Every name read in an expression, not looking into lambdas or comprehensions
+# (their names belong to their own scope).
+def _glpython_names_read(expr):
+  if isinstance(expr, ast.Name):
+    if isinstance(expr.ctx, ast.Load):
+      yield expr
+    return
+  if isinstance(expr, (ast.Lambda, ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)):
+    return
+  for child in ast.iter_child_nodes(expr):
+    yield from _glpython_names_read(child)
+
+# An expression's source with every name in it that currently has a plain
+# value (not a function, class or module) replaced by that value's repr.
+def _glpython_source_with_values(expr, scope):
+  source = getattr(expr, "_glpython_source", None)
+  if source is None or getattr(expr, "lineno", None) is None:
+    return None
+  lines = [line.encode("utf-8") for line in source.split("\n")]
+  replacements = []
+  for name in _glpython_names_read(expr):
+    try:
+      value = scope.get(name.id)
+    except NameError:
+      continue
+    if _glpython_is_uninteresting_for_substitution(value) or name.end_lineno != name.lineno:
+      continue
+    # Columns are UTF-8 byte offsets; the first line of the source starts at
+    # the expression's own column, later lines at column 0.
+    row = name.lineno - expr.lineno
+    shift = expr.col_offset if row == 0 else 0
+    if not 0 <= row < len(lines):
+      continue
+    start = len(lines[row][:name.col_offset - shift].decode("utf-8", "replace"))
+    end = len(lines[row][:name.end_col_offset - shift].decode("utf-8", "replace"))
+    replacements.append((row, start, end, _glpython_safe_repr(value)))
+  text_lines = [line.decode("utf-8") for line in lines]
+  for row, start, end, value_text in sorted(replacements, reverse=True):
+    text_lines[row] = text_lines[row][:start] + value_text + text_lines[row][end:]
+  return " ".join(line.strip() for line in text_lines)
+
 def _exec_if(node, scope):
+  # The condition with its names already replaced by their values ("2 == 0"),
+  # taken before it runs - for the evaluation chain's reason comment.
+  condition_text = _glpython_source_with_values(node.test, scope)
   condition = _glpython_eval(node.test, scope)
-  _glpython_record(node, "branch", f"if {_glpython_node_source(node.test)}", "true" if condition else "false", _glpython_current_func())
+  _glpython_record(node, "branch", f"if {_glpython_node_source(node.test)}", "true" if condition else "false", _glpython_current_func(), extra={"conditionText": condition_text})
   branch = node.body if condition else node.orelse
   _glpython_exec_stmts(branch, scope)
 
@@ -844,6 +906,14 @@ def _exec_continue(node, scope):
   raise _GlpythonContinue()
 
 def _exec_return(node, scope):
+  # Which return ran, and the values of the call's own variables (parameters
+  # and locals) read in its expression, taken before it's evaluated: the
+  # evaluation chain export replaces a boxed call by exactly this expression
+  # with those names already filled in.
+  info = {
+    "returnNodeId": getattr(node.value, "_glpython_id", None) if node.value is not None else None,
+    "returnNames": [[child._glpython_id, _glpython_safe_repr(scope.vars[child.id])] for child in _glpython_names_read(node.value) if child.id in scope.vars] if node.value is not None else [],
+  }
   value = _glpython_eval(node.value, scope) if node.value is not None else None
   # If node.value just got its own "eval" step on this very line (e.g.
   # "return result" substituting "result" -> "'even'"), the box already
@@ -861,7 +931,7 @@ def _exec_return(node, scope):
   )
   if not already_visible:
     _glpython_record(node, "exec", "return", _glpython_safe_repr(value), _glpython_current_func())
-  raise _GlpythonReturn(value)
+  raise _GlpythonReturn(value, info)
 
 def _exec_functiondef(node, scope):
   scope.set(node.name, _GlpythonFunction(node, scope))
@@ -1034,6 +1104,22 @@ def _glpython_short_form(def_node):
   names = [(child._glpython_id, child.id) for child in ast.walk(value) if isinstance(child, ast.Name) and isinstance(child.ctx, ast.Load) and child.id in params]
   return value, names
 
+_GLPYTHON_LOCALS_STATEMENTS = (ast.Assign, ast.AugAssign, ast.AnnAssign, ast.For, ast.AsyncFor, ast.While, ast.With, ast.AsyncWith, ast.NamedExpr)
+
+# Whether a function's own body assigns local variables or loops (nested
+# functions and classes don't count) - such a call gets the evaluation chain's
+# "body with local variables" comment.
+def _glpython_has_locals(def_node):
+  pending = list(def_node.body)
+  while pending:
+    node = pending.pop()
+    if isinstance(node, _GLPYTHON_LOCALS_STATEMENTS):
+      return True
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+      continue
+    pending.extend(ast.iter_child_nodes(node))
+  return False
+
 def _glpython_preprocess(tree, source, counter):
   for node in ast.walk(tree):
     counter[0] += 1
@@ -1052,6 +1138,7 @@ def _glpython_preprocess(tree, source, counter):
   for node in ast.walk(tree):
     if isinstance(node, ast.FunctionDef):
       node._glpython_short_form = _glpython_short_form(node)
+      node._glpython_has_locals = _glpython_has_locals(node)
     # A call whose value an operator works on - including the object of an
     # attribute or subscript - needs parentheses around an expression that
     # replaces it (see "parens" on the call-enter step).
