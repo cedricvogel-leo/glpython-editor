@@ -139,7 +139,9 @@ hosts) runs the doctests in the docstrings of the file that would run, as
 `if __name__ == "__main__":` block doesn't run. The output panel shows how many
 examples passed, then each failing example in doctest's own words (`Failed
 example:`, `Expected:`, `Got:` stay untranslated) with a button that visualizes
-that example step by step against the same definitions. An example that printed
+that example step by step against the same definitions. If the example didn't
+raise, the visualization's last step shows the two texts doctest compared next
+to the final value (`exampleGotExpected`, e.g. «Erhalten: 4.0 · Erwartet: 4»). An example that printed
 what was expected but returned `None` passes, as in doctest, with a separate
 glpython hint that it probably should `return` instead. Texts: `runTests`,
 `testsRunning`, `testsSummary`, `testsNone`, `testsLoadError`,
