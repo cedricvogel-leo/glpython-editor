@@ -1,12 +1,13 @@
-import type { CoreStrings } from '../GlPythonWorkspace'
+import type { CoreStrings } from './GlPythonWorkspace'
 
-export type EmbedLocale = 'en' | 'de'
+export type UiLocale = 'en' | 'de'
 
-// The embed's UI strings, worded exactly as in the glpython IDE's own
-// translations (its src/i18n.ts) so a course and the IDE use the same terms.
-// The language comes from the host via the "lang" query parameter, e.g. the
-// LiaScript macro passes the course's language.
-export const embedStrings: Record<EmbedLocale, CoreStrings> = {
+export const uiLocales: readonly UiLocale[] = ['en', 'de']
+
+// The workspace's UI strings in every supported language - the only copy:
+// the embed uses them directly and the glpython IDE builds its translations
+// on top of them, so a course and the IDE use the same terms.
+export const coreStrings: Record<UiLocale, CoreStrings> = {
   en: {
     exitVisualizer: 'Exit visualizer',
     readyOutput: 'Ready when you are. Run your code to see what it does.',
@@ -41,6 +42,9 @@ export const embedStrings: Record<EmbedLocale, CoreStrings> = {
     copyChainComments: 'Comments',
     chainConditionComment: (condition, value) => `${condition} is ${value}`,
     chainLocalsComment: 'body with local variables',
+    valueKindFunction: 'function',
+    valueKindClass: 'class',
+    valueKindModule: 'module',
     visualizerNoLocals: 'No variables yet.',
     closeFile: (path) => `Close ${path}`,
     output: 'Output',
@@ -94,6 +98,9 @@ export const embedStrings: Record<EmbedLocale, CoreStrings> = {
     copyChainComments: 'Kommentare',
     chainConditionComment: (condition, value) => `${condition} ist ${value}`,
     chainLocalsComment: 'Rumpf mit lokalen Variablen',
+    valueKindFunction: 'Funktion',
+    valueKindClass: 'Klasse',
+    valueKindModule: 'Modul',
     visualizerNoLocals: 'Noch keine Variablen.',
     closeFile: (path) => `${path} schließen`,
     output: 'Ausgabe',
@@ -115,7 +122,16 @@ export const embedStrings: Record<EmbedLocale, CoreStrings> = {
   },
 }
 
-// "de", "de-CH" etc. -> German; anything else (or nothing) -> English.
-export function embedLocaleFromLanguage(language: string | null): EmbedLocale {
-  return language?.toLowerCase().startsWith('de') ? 'de' : 'en'
+// The first candidate language that is supported, by its primary subtag
+// ("de-CH" -> "de"), or English. Hosts pass their candidates in order of
+// precedence, e.g. the embed: the course's language, then the browser's;
+// the IDE: the learner's explicit choice, then the browser's. Unsupported
+// languages (e.g. "fr") just fall through to the next candidate.
+export function resolveUiLocale(...candidates: Array<string | null | undefined>): UiLocale {
+  for (const candidate of candidates) {
+    const primary = candidate?.toLowerCase().split('-')[0]
+    const locale = uiLocales.find((supported) => supported === primary)
+    if (locale) return locale
+  }
+  return 'en'
 }
