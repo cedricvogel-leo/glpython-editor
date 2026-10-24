@@ -98,6 +98,24 @@ Deep chains of open calls, such as a recursion without a base case, collapse
 their middle boxes into one "… N more calls of f(x) …" marker
 (`visualizerCollapsedCalls`), so the layout stays usable.
 
+### Box and substitution mode
+
+The visualizer's toolbar switches between two ways of showing a function call.
+In **substitution** mode (the default), a call to a function whose body is a
+single `return <expression>` (optionally after a docstring) is replaced at its
+call site by that expression, with its parameters already replaced by their
+values, as in the course's paper notation:
+`quadrat(a + 2) → quadrat(5 + 2) → quadrat(7) → 7 * 7 → 49`. Every click is one
+substitution, and a replacing expression gets parentheses where an operator
+works on it (`1 * (3 * 2)`). Any other function still opens a box, and the
+outermost box shows `visualizerBoxHint`. In **box** mode every call opens a box.
+
+The mode last chosen is remembered per browser. A host can preset it with the
+`visualizerMode` prop (`'box'` or `'substitution'`), and the embed with the
+`visualizer=box` or `visualizer=substitution` query parameter. The toggle's
+texts are `visualizerModeLabel`, `visualizerModeBox` and
+`visualizerModeSubstitution`, all optional like `visualizerBoxHint`.
+
 ### REPL
 
 Below the output panel, a `>>>` input line runs Python in the namespace of the

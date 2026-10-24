@@ -82,7 +82,23 @@ export type TraceStep = {
   // the UI draw an arrow from that name's row into the highlighted call.
   lookupName: string | null
   lookupFrameId: number | null
+  // Only on "call-enter" steps of a function that qualifies for the
+  // substitution mode (a single "return <expression>"): see ShortForm.
+  shortForm?: ShortForm | null
 }
+
+// How a qualifying call is shown in the substitution mode: replaced at its
+// call site by its return expression, with each parameter name in it
+// already replaced by its value, and in parentheses where an operator works
+// on the call's value (e.g. "1 * (3 * 2)").
+export type ShortForm = {
+  returnNodeId: number
+  // [node id of a parameter name in the return expression, value text]
+  paramValues: Array<[number, string]>
+  parens: boolean
+}
+
+export type VisualizerMode = 'box' | 'substitution'
 
 export type AstNode = {
   id: number
@@ -303,6 +319,7 @@ export type OpenFrame = {
   funcDefPath: string
   funcDefNodeId: number
   paramAnnotations: Array<[number, string, string]>
+  shortForm: ShortForm | null
 }
 
 // Replays the trace up to (and including) `uptoStep`, returning every call
@@ -325,6 +342,7 @@ export function computeOpenFramesUpTo(trace: TraceStep[], uptoStep: number): Map
         funcDefPath: step.funcDefPath,
         funcDefNodeId: step.funcDefNodeId,
         paramAnnotations: step.paramAnnotations ?? [],
+        shortForm: step.shortForm ?? null,
       })
     }
 
@@ -334,6 +352,31 @@ export function computeOpenFramesUpTo(trace: TraceStep[], uptoStep: number): Map
   }
 
   return open
+}
+
+// The steps the substitution mode clicks through: every step of the trace
+// except those that wouldn't change what's shown once qualifying calls are
+// replaced by their return expressions - looking up a parameter name (its
+// value is already in place), the moment before such a call starts, any
+// statement step inside it, and its final "returned" step (the expression
+// has already become that value). Each remaining click is one substitution.
+export function substitutionModeSteps(trace: TraceStep[]): TraceStep[] {
+  const paramNodeIdsByFrame = new Map<number, Set<number>>()
+  const pendingIndexByCall = new Map<string, number>()
+  const hidden = new Set<number>()
+  trace.forEach((step, index) => {
+    if (step.kind === 'call-pending') pendingIndexByCall.set(`${step.frameId}:${step.nodeId}`, index)
+    if (step.kind === 'call-enter' && step.shortForm) {
+      paramNodeIdsByFrame.set(step.frameId, new Set(step.shortForm.paramValues.map(([nodeId]) => nodeId)))
+      const pendingIndex = pendingIndexByCall.get(`${step.parentFrameId ?? 0}:${step.nodeId}`)
+      if (pendingIndex !== undefined) hidden.add(pendingIndex)
+      return
+    }
+    const paramNodeIds = paramNodeIdsByFrame.get(step.frameId)
+    if (paramNodeIds && (step.kind === 'exec' || (step.kind === 'eval' && paramNodeIds.has(step.nodeId)))) hidden.add(index)
+    if (step.closesFrameId !== null && step.closesFrameId !== undefined && paramNodeIdsByFrame.has(step.closesFrameId)) hidden.add(index)
+  })
+  return trace.filter((_, index) => !hidden.has(index))
 }
 
 // A deep chain of open call boxes (e.g. a recursion without a base case)

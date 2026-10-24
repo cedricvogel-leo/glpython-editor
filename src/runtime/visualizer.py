@@ -265,7 +265,7 @@ def _glpython_record_call_pending(call_node, name, scope):
   _glpython_trace_log.append(entry)
   _glpython_step_count += 1
 
-def _glpython_record_call_enter(call_node, glpython_function, frame_id, parent_frame_id, extra_locals, param_annotations, arg_sources=None):
+def _glpython_record_call_enter(call_node, glpython_function, frame_id, parent_frame_id, extra_locals, param_annotations, arg_sources=None, short_form=None):
   global _glpython_step_count
   if _glpython_step_count >= _GLPYTHON_MAX_STEPS:
     raise _GlpythonTraceLimit()
@@ -308,6 +308,12 @@ def _glpython_record_call_enter(call_node, glpython_function, frame_id, parent_f
     "closesFrameId": None,
     "lookupName": None,
     "lookupFrameId": None,
+    # Set only when the function qualifies for the UI's "substitution" mode
+    # (see _glpython_short_form): its return expression's node id, each
+    # parameter name inside that expression with the value to show in its
+    # place, and whether the call sits in an operator context, where the
+    # replacing expression needs parentheses ("1 * (3 * 2)").
+    "shortForm": short_form,
   }
   _glpython_trace_log.append(entry)
   _glpython_step_count += 1
@@ -611,7 +617,15 @@ class _GlpythonFunction:
           if index >= len(call_args) or isinstance(call_args[index], ast.Starred):
             continue
           arg_sources.append(name)
-        _glpython_record_call_enter(call_node, self, frame_id, parent_frame_id, _glpython_snapshot_locals(scope), param_annotations, arg_sources)
+        short_form = getattr(self.node, "_glpython_short_form", None)
+        if short_form is not None:
+          value_node, param_names = short_form
+          short_form = {
+            "returnNodeId": value_node._glpython_id,
+            "paramValues": [[node_id, _glpython_safe_repr(call_vars[name])] for node_id, name in param_names if name in call_vars],
+            "parens": getattr(call_node, "_glpython_in_operator", False),
+          }
+        _glpython_record_call_enter(call_node, self, frame_id, parent_frame_id, _glpython_snapshot_locals(scope), param_annotations, arg_sources, short_form)
       # The body's steps belong to the file the "def" lives in, which isn't
       # the caller's file when e.g. a traced REPL input calls a function
       # from main.py (the call-enter step above stays at the call site).
@@ -992,6 +1006,34 @@ def _glpython_summary(node):
     pass
   return ""
 
+# Expressions whose names a plain textual substitution can't handle (they
+# open their own scope or rebind names), so a function returning one never
+# gets the short form.
+_GLPYTHON_SHORT_FORM_EXCLUDED = (ast.Lambda, ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp, ast.NamedExpr, ast.Yield, ast.YieldFrom, ast.Await)
+
+# A function qualifies for the UI's "substitution" mode - its call replaced
+# by its return expression with the arguments filled in, as in the course's
+# paper notation - only if its body is a single "return <expression>",
+# optionally after a docstring. Returns that expression plus (node id, name)
+# for every parameter name read in it, or None.
+def _glpython_short_form(def_node):
+  body = def_node.body
+  if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) and isinstance(body[0].value.value, str):
+    body = body[1:]
+  if len(body) != 1 or not isinstance(body[0], ast.Return) or body[0].value is None:
+    return None
+  value = body[0].value
+  if any(isinstance(child, _GLPYTHON_SHORT_FORM_EXCLUDED) for child in ast.walk(value)):
+    return None
+  arguments = def_node.args
+  params = {arg.arg for arg in arguments.posonlyargs + arguments.args + arguments.kwonlyargs}
+  if arguments.vararg:
+    params.add(arguments.vararg.arg)
+  if arguments.kwarg:
+    params.add(arguments.kwarg.arg)
+  names = [(child._glpython_id, child.id) for child in ast.walk(value) if isinstance(child, ast.Name) and isinstance(child.ctx, ast.Load) and child.id in params]
+  return value, names
+
 def _glpython_preprocess(tree, source, counter):
   for node in ast.walk(tree):
     counter[0] += 1
@@ -1008,6 +1050,14 @@ def _glpython_preprocess(tree, source, counter):
   # the loop body visibly "reset" to its original source each time around,
   # instead of staying stuck showing the last iteration's computed values.
   for node in ast.walk(tree):
+    if isinstance(node, ast.FunctionDef):
+      node._glpython_short_form = _glpython_short_form(node)
+    # A call whose value an operator works on - including the object of an
+    # attribute or subscript - needs parentheses around an expression that
+    # replaces it (see "parens" on the call-enter step).
+    for child in ast.iter_child_nodes(node):
+      if isinstance(child, ast.Call):
+        child._glpython_in_operator = isinstance(node, (ast.BinOp, ast.UnaryOp, ast.BoolOp, ast.Compare)) or (isinstance(node, (ast.Attribute, ast.Subscript)) and child is node.value)
     if isinstance(node, (ast.For, ast.While)):
       body_ids = []
       for stmt in node.body:
