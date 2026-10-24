@@ -9,6 +9,7 @@ import {
   type GlPythonChildMessage,
 } from '../embedProtocol'
 import { updateProjectFile, type Project } from '../project'
+import type { VisualizerMode } from '../visualizer'
 import { embedStrings } from './strings'
 
 const defaultSource = 'print("Hello from glpython")'
@@ -27,6 +28,13 @@ function createEmbedProject(source: string): Project {
       },
     },
   }
+}
+
+// Optional preset for the visualizer's box/substitution mode, e.g. from a
+// LiaScript block's macro option: "?visualizer=box".
+function visualizerModeFromLocation(): VisualizerMode | undefined {
+  const mode = new URLSearchParams(window.location.search).get('visualizer')
+  return mode === 'box' || mode === 'substitution' ? mode : undefined
 }
 
 function modeFromLocation(): EmbedMode {
@@ -128,6 +136,7 @@ export function App() {
         key={`${mode}:${workspaceGeneration}`}
         project={project}
         command={command}
+        visualizerMode={visualizerModeFromLocation()}
         activeFile={project.mainFile}
         openFiles={[project.mainFile]}
         onOpenFile={() => undefined}

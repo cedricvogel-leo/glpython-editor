@@ -35,4 +35,4 @@ export {
 export type { TurtleCommand } from './GraphicsWindow'
 export { GraphicsWindow } from './GraphicsWindow'
 
-export type { TraceResult, TraceStep, TraceStepKind, AstNode, AstFile } from './visualizer'
+export type { TraceResult, TraceStep, TraceStepKind, AstNode, AstFile, ShortForm, VisualizerMode } from './visualizer'
