@@ -205,6 +205,15 @@ messages, and sends `glpython:resize` as its content size changes. `run` and
 remain the authoritative editor and restore its own PWA state. The public TypeScript types and validators are exported from
 `glpython-editor`.
 
+Protocol version 2 adds programs of several files: `load`, `run` and `visualize`
+may carry `files` (`{ path, source }`, each path a Python module name such as
+`parser.py`, at most `GLPYTHON_MAX_FILES`) and `mainFile`, the file to run;
+`source` stays the code of that file. Only the file to run is traced; imported
+files run as a black box. The embed still accepts version 1 and answers every
+parent in the version that parent last used (version 1 until it hears
+otherwise), so older parents keep working. `glpython:ready` reports
+`capabilities.files`.
+
 ```ts
 iframe.contentWindow?.postMessage({
   type: 'glpython:run',

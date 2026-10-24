@@ -1294,26 +1294,29 @@ def _glpython_run_visual(main_path, file_paths_json):
 # files as they were at that Run (the editor may have changed since), which
 # is also what the UI must render the call boxes from. An input that doesn't
 # parse isn't traced at all: it reports its error line like a REPL input.
-def _glpython_run_visual_repl(source, sources_json):
+def _glpython_run_visual_repl(source, sources_json, main_path):
   try:
     ast.parse(source, _GLPYTHON_REPL_PATH, "exec")
   except SyntaxError as error:
     return json.dumps({"replError": _glpython_error_message(error)})
   sources = {path: code for path, code in json.loads(sources_json).items() if path.endswith(".py")}
   sources[_GLPYTHON_REPL_PATH] = source
-  return _glpython_trace_program(_GLPYTHON_REPL_PATH, sources, _glpython_fill_scope_from_repl)
+  return _glpython_trace_program(_GLPYTHON_REPL_PATH, sources, lambda scope, trees: _glpython_fill_scope_from_repl(scope, trees, main_path))
 
 # Fills the traced module scope from the REPL namespace. Functions the last
-# Run defined at the top level of one of the files are swapped for this
+# Run defined at the top level of the file it ran are swapped for this
 # interpreter's own version of the same "def" node, so calling them is traced
-# step by step (anything else defined elsewhere stays an opaque callable).
+# step by step. Functions from imported files (e.g. a course's shared
+# parser.py) stay opaque callables, as they are when visualizing the file.
 # Other values are deep-copied where possible, so the visualization is a dry
 # run that leaves the REPL's own lists etc. untouched.
-def _glpython_fill_scope_from_repl(scope, trees):
+def _glpython_fill_scope_from_repl(scope, trees, main_path):
   global _glpython_current_path
   import copy
   defs = {}
   for path, tree in trees.items():
+    if path != main_path:
+      continue
     for node in tree.body:
       if isinstance(node, ast.FunctionDef):
         defs[("/" + path, node.name, node.lineno)] = (path, node)

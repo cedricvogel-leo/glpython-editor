@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import {
   GLPYTHON_EMBED_PROTOCOL_VERSION,
+  GLPYTHON_MAX_FILES,
   GLPYTHON_MAX_SOURCE_LENGTH,
   parseParentMessage,
   parseParentOrigin,
@@ -77,6 +78,35 @@ assert.equal(parseParentMessage({
   source: 'print("bad mode")',
   mode: 'unknown',
 }), null)
+
+// Version 1 (a single source) is still accepted, without files.
+assert.equal(GLPYTHON_EMBED_PROTOCOL_VERSION, 2)
+assert.deepEqual(parseParentMessage({ type: 'glpython:run', version: 1, source: 'print(1)', mode: 'eval' }), { type: 'glpython:run', version: 1, source: 'print(1)', mode: 'eval' })
+assert.equal(parseParentMessage({ type: 'glpython:run', version: 1, source: 'x', files: [{ path: 'main.py', source: 'x' }], mainFile: 'main.py' }), null)
+assert.equal(parseParentMessage({ type: 'glpython:reset', version: 3 }), null)
+
+// Version 2: a program of several files and the one to run.
+const program = {
+  type: 'glpython:visualize',
+  version: 2,
+  source: 'from helpers import doppelt\nprint(doppelt(21))',
+  mode: 'eval',
+  files: [
+    { path: 'helpers.py', source: 'def doppelt(x):\n    return 2 * x' },
+    { path: 'main.py', source: 'from helpers import doppelt\nprint(doppelt(21))' },
+  ],
+  mainFile: 'main.py',
+}
+assert.deepEqual(parseParentMessage(program), program)
+assert.equal(parseParentMessage({ ...program, mainFile: 'other.py' }), null)
+assert.equal(parseParentMessage({ ...program, mainFile: undefined }), null)
+assert.equal(parseParentMessage({ ...program, files: [] }), null)
+for (const path of ['../evil.py', 'sub/dir.py', 'main.txt', '1abc.py', 'main.py.py ', '']) {
+  assert.equal(parseParentMessage({ ...program, files: [{ path, source: '' }, ...program.files] }), null, path)
+}
+assert.equal(parseParentMessage({ ...program, files: [...program.files, program.files[0]] }), null)
+assert.equal(parseParentMessage({ ...program, files: Array.from({ length: GLPYTHON_MAX_FILES + 1 }, (_, i) => ({ path: `f${i}.py`, source: '' })), mainFile: 'f0.py' }), null)
+assert.equal(parseParentMessage({ ...program, files: [{ path: 'main.py', source: 'x'.repeat(GLPYTHON_MAX_SOURCE_LENGTH + 1) }] }), null)
 
 const readyMessage = {
   type: 'glpython:ready',

@@ -873,7 +873,12 @@ function GlPythonWorkspace(props: GlPythonWorkspaceProps) {
   }, [replEntries])
   useEffect(() => {
     if (!command) return
-    if (command.type === 'run') runCode()
+    // A host's run ends a visualization, so the program's own output shows
+    // instead of the visualized run's.
+    if (command.type === 'run') {
+      exitVisualizer()
+      runCode()
+    }
     if (command.type === 'visualize') runVisualize()
     if (command.type === 'reset') {
       exitVisualizer()
