@@ -218,9 +218,16 @@ by its parent:
     resetOutput: false,
     visualization: true,
     graphics: false,
+    emptyOutput: false,
   }}
 />
 ```
+
+With `emptyOutput: false` (the embed's `visual` mode), a visualization whose
+program prints nothing and raises no error has no output panel instead of
+«(Keine Ausgabe)», so short visualizations take less space. It is decided for
+the whole run, so the panel doesn't appear in the middle of stepping. With the
+REPL on, the panel always stays, since it holds the REPL's input line.
 
 This repository also contains a standalone iframe application:
 

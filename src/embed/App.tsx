@@ -187,6 +187,7 @@ export function App() {
           graphics: mode === 'turtle',
           repl: mode === 'eval' && features('repl'),
           export: features('export'),
+          emptyOutput: mode !== 'visual',
         }}
       />
     </main>
