@@ -31,7 +31,7 @@ There is no unit test framework; `test:protocol` (plain `node:assert` against th
 **Two Vite builds from one source tree.**
 - `vite.config.ts` — library mode, single ESM bundle `dist/index.js` + `.d.ts` via `vite-plugin-dts`. React, Monaco, and lucide-react are externals (peer deps). `base: './'` is required so the worker URL stays relative to the package's install location, not the host app's origin.
 - `vite.embed.config.ts` — app mode rooted at `embed/` (`index.html` = iframe, `demo.html` = parent test page). Dev/preview servers set COOP/COEP headers; `embed/public/coi-serviceworker.js` is the fallback for static hosts.
-- `src/style.css` is not imported by any module; it's copied to `dist/style.css` by the build script and hosts must import `glpython-editor/style.css` themselves.
+- `src/style.css` is not imported by any module; it's copied to `dist/style.css` by the build script and hosts must import `glpython-editor/style.css` themselves. All its colours, fonts and radii are `--glp-*` tokens defined on `:root` (README «Look»; values from the course design). Use a token, never a new literal colour; shadows only for floating elements. The embed's flat section layout lives in `src/embed/style.css`.
 
 **Python execution lives in a web worker.** `src/pyodide-worker.js` loads Pyodide from the jsDelivr CDN and inlines the Python files under `src/runtime/` via `?raw` imports:
 - `session.py` — invalidates cached modules between runs and runs the main file by `exec` in a plain dict, `_glpython_repl_namespace`, which REPL inputs (`_glpython_repl`) reuse. It's not `runpy`, so the file's functions and the REPL share one global namespace. Also has `_glpython_error_message` (a Python-style last traceback line), which `visualizer.py` uses too.

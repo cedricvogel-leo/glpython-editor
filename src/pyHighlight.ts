@@ -9,9 +9,7 @@
 // which isn't exposed as a public API. This maps the small, fixed set of
 // token types Monaco's actual Python tokenizer produces (see
 // node_modules/monaco-editor/esm/vs/languages/definitions/python/python.js)
-// to CSS classes using the vs-dark theme's well-known default colors for
-// each category, so the result looks consistent with the real editor even
-// though it isn't using its theme engine directly.
+// to CSS classes, coloured by the --glp-syntax-* tokens in style.css.
 import type { Monaco } from '@monaco-editor/react'
 
 export function pyTokenClassName(tokenType: string): string | undefined {
@@ -24,6 +22,8 @@ export function pyTokenClassName(tokenType: string): string | undefined {
 }
 
 export type PyTextRun = { text: string; className?: string }
+
+const PYTHON_CONSTANTS = new Set(['True', 'False', 'None'])
 
 // Splits one line fragment of plain Python source into colored runs. Used
 // to tokenize only the *un-substituted* leftover text of each rendered
@@ -40,7 +40,11 @@ export function tokenizePythonFragment(monaco: Monaco, text: string): PyTextRun[
   for (let t = 0; t < tokens.length; t++) {
     const start = tokens[t].offset
     const end = t + 1 < tokens.length ? tokens[t + 1].offset : text.length
-    if (end > start) runs.push({ text: text.slice(start, end), className: pyTokenClassName(tokens[t].type) })
+    if (end <= start) continue
+    const tokenText = text.slice(start, end)
+    // Monaco counts True/False/None as keywords; they're shown as values,
+    // in the number colour.
+    runs.push({ text: tokenText, className: PYTHON_CONSTANTS.has(tokenText) ? 'py-tok-number' : pyTokenClassName(tokens[t].type) })
   }
   return runs
 }

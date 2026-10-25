@@ -13,7 +13,8 @@ export function GraphicsWindow({ commands }: { commands: TurtleCommand[] }) {
     if (!canvas || !context) return
 
     context.clearRect(0, 0, canvas.width, canvas.height)
-    context.fillStyle = '#fbfaf6'
+    // The canvas can't use CSS variables directly: it reads the panel colour.
+    context.fillStyle = getComputedStyle(canvas).getPropertyValue('--glp-bg').trim() || '#FFFFFF'
     context.fillRect(0, 0, canvas.width, canvas.height)
     context.save()
     context.translate(0, canvas.height)

@@ -254,6 +254,32 @@ reserve space for turtle graphics. Use `mode: 'visual'` with a
 `glpython:visualize` message for an editor-free visualizer that cannot exit to
 the normal workspace.
 
+### Look
+
+Every colour, font and the corner radius in `style.css` come from CSS
+variables defined on `:root` with glpython's own look (the course design:
+white panels, light grey code areas, ink accent `#1F3A5F`, the system's UI
+and monospace fonts, no web fonts). A host can override any of them:
+
+| Variable | Role |
+|---|---|
+| `--glp-bg` | panel background |
+| `--glp-surface` | code in the visualizer, output, REPL |
+| `--glp-border` | decorative borders and separator lines |
+| `--glp-border-control` | borders of controls, call boxes in box mode |
+| `--glp-text`, `--glp-text-muted` | text and code; line numbers, step counter, secondary info, connector lines |
+| `--glp-accent`, `--glp-on-accent` | active mode, scrubber, focus, primary button; text on it |
+| `--glp-current`, `--glp-current-outline` | current subexpression and new value, current line; next step (dashed) |
+| `--glp-error`, `--glp-error-bg` | errors, failing tests, «Erhalten · Erwartet» |
+| `--glp-warning`, `--glp-warning-bg` | hints |
+| `--glp-success` | passed tests, runtime ready |
+| `--glp-syntax-keyword`, `-string`, `-number`, `-comment` | syntax colours (names, operators, brackets use `--glp-text`) |
+| `--glp-font-code`, `--glp-font-ui`, `--glp-radius` | fonts and corner radius |
+
+The embed is flat: no cards, its sections only separated by `--glp-border`
+lines, so the host draws the one frame around it. The Monaco editor still uses
+its built-in `vs-dark` theme.
+
 ## Development
 
 ```bash
