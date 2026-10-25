@@ -175,7 +175,7 @@ function germanErrorHint(hint: ErrorHint, context: ErrorHintContext): string | n
     case 'list-index':
       return 'Die Liste hat weniger Elemente, als der Index verlangt. Die Zählung beginnt bei 0.'
     case 'doctest-blank':
-      return `Nach \`>>>\` fehlt ein Leerzeichen (Zeile ${hint.line} im Docstring von \`${hint.function}\`).`
+      return `Nach \`>>>\` fehlt ein Leerzeichen (Zeile ${hint.line}).`
     default:
       return null
   }
@@ -202,7 +202,7 @@ function englishErrorHint(hint: ErrorHint, context: ErrorHintContext): string | 
     case 'list-index':
       return 'The list has fewer elements than the index asks for. Counting starts at 0.'
     case 'doctest-blank':
-      return `A space is missing after \`>>>\` (line ${hint.line} of the docstring of \`${hint.function}\`).`
+      return `A space is missing after \`>>>\` (line ${hint.line}).`
     default:
       return null
   }

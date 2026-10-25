@@ -7,7 +7,8 @@ import re
 # subclass, an ambiguous case such as a method whose count includes self)
 # gets no hint, since no hint is better than a wrong one. The result is data
 # ({"kind": ..., plus the names it mentions}); the UI words it in the course's
-# language (CoreStrings.errorHint).
+# language (CoreStrings.errorHint). doctest's "lacks blank after >>>" is
+# handled in doctests.py, which knows the file line.
 _GLPYTHON_IDENTIFIER = r"[^\W\d]\w*"
 
 def _glpython_error_hint(error):
@@ -39,13 +40,6 @@ def _glpython_error_hint(error):
   elif kind == "IndexError":
     if message == "list index out of range":
       return {"kind": "list-index"}
-  elif kind == "ValueError":
-    # doctest's parser, e.g. "line 2 of the docstring for main.f lacks blank
-    # after >>>: '>>>f(1)'"; the name is module.qualname.
-    match = re.match(r"line (\d+) of the docstring for (\S+) lacks blank after >>>: ", message)
-    if match:
-      name = match.group(2)
-      return {"kind": "doctest-blank", "line": int(match.group(1)), "function": name.split(".", 1)[1] if "." in name else name}
   return None
 
 # The hint for the error the last Run ended with, for the worker, which only

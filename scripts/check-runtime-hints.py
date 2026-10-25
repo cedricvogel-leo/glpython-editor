@@ -107,17 +107,41 @@ report = json.loads(namespace["_glpython_run_doctests"](write('''def quadrat(x):
 hints = [failure.get("errorHint") for failure in report.get("failures", [])]
 if (report.get("attempted"), report.get("failed"), hints) != (2, 1, [{"kind": "name-not-defined", "name": "y"}]):
     failures.append(f"doctest example: {report!r}")
-report = json.loads(namespace["_glpython_run_doctests"](write('''def quadrat(x):
+# A missing blank after >>>: the hint names the line in the editor, not
+# doctest's line within the docstring. Python's message stays as it is.
+BLANK_CASES = [
+    ("function", '''def quadrat(x):
     """
     >>>quadrat(2)
     4
     """
     return x * x
-''')))
-expected = {"examplesError": "ValueError: line 2 of the docstring for main.quadrat lacks blank after >>>: '>>>quadrat(2)'",
-            "errorHint": {"kind": "doctest-blank", "line": 2, "function": "quadrat"}}
-if report != expected:
-    failures.append(f"doctest blank: {report!r}, expected {expected!r}")
+''', "ValueError: line 2 of the docstring for main.quadrat lacks blank after >>>: '>>>quadrat(2)'", 3),
+    ("method", '''class Konto:
+    """Ein Konto."""
+
+    def einzahlen(self, betrag):
+        """Zahlt ein.
+
+        >>>Konto().einzahlen(5)
+        5
+        """
+        return betrag
+''', "ValueError: line 3 of the docstring for main.Konto.einzahlen lacks blank after >>>: '        >>>Konto().einzahlen(5)'", 7),
+    ("module", '''"""Ein Modul.
+
+>>>1 + 1
+2
+"""
+''', "ValueError: line 3 of the docstring for main lacks blank after >>>: '>>>1 + 1'", 3),
+]
+for label, source, message, line in BLANK_CASES:
+    report = json.loads(namespace["_glpython_run_doctests"](write(source)))
+    expected = {"examplesError": message, "errorHint": {"kind": "doctest-blank", "line": line}}
+    if report != expected:
+        failures.append(f"doctest blank ({label}): {report!r}, expected {expected!r}")
+    if source.splitlines()[line - 1].strip() != message.rsplit(": ", 1)[1].strip("'").strip():
+        failures.append(f"doctest blank ({label}): line {line} is {source.splitlines()[line - 1]!r}")
 
 # Near misses: no hint - silence is better than a wrong hint.
 NEAR_MISSES = [

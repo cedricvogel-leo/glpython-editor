@@ -47,9 +47,9 @@ const cases = [
   [{ kind: 'list-index' },
     'Die Liste hat weniger Elemente, als der Index verlangt. Die Zählung beginnt bei 0.',
     'The list has fewer elements than the index asks for. Counting starts at 0.'],
-  [{ kind: 'doctest-blank', line: 2, function: 'f' },
-    'Nach `>>>` fehlt ein Leerzeichen (Zeile 2 im Docstring von `f`).',
-    'A space is missing after `>>>` (line 2 of the docstring of `f`).'],
+  [{ kind: 'doctest-blank', line: 3 },
+    'Nach `>>>` fehlt ein Leerzeichen (Zeile 3).',
+    'A space is missing after `>>>` (line 3).'],
 ]
 for (const [hint, german, english] of cases) {
   assert.equal(de.errorHint(hint, 'other'), german)

@@ -1,5 +1,6 @@
 import doctest
 import json
+import re
 import sys
 import traceback
 import types
@@ -57,6 +58,28 @@ class _GlpythonDocTestRunner(doctest.DocTestRunner):
     self.failed_examples.append(self._example_record(test, example, text, error=exc_info[1]))
     self._displayed = []
 
+# The hint for doctest's "line 2 of the docstring for main.f lacks blank
+# after >>>: '>>>f(1)'", with the line as the editor counts it: doctest counts
+# from the docstring's first line, so the line its docstring starts at in the
+# file is added. None if the docstring can't be found (no hint rather than a
+# wrong line).
+def _glpython_doctest_blank_hint(error, module, module_name, source):
+  match = re.match(r"line (\d+) of the docstring for (\S+) lacks blank after >>>: ", str(error))
+  if not match:
+    return None
+  name = match.group(2)
+  target = module
+  try:
+    if name != module_name:
+      for part in name.removeprefix(module_name + ".").split("."):
+        target = getattr(target, part)
+    start = doctest.DocTestFinder()._find_lineno(target, source.splitlines(True))
+  except Exception:
+    return None
+  if start is None:
+    return None
+  return {"kind": "doctest-blank", "line": start + int(match.group(1))}
+
 # Runs the doctests of one file the way "python -m doctest" does: the file is
 # loaded as a module named after it (so "if __name__ == '__main__':" blocks
 # don't run), then every example in its docstrings runs in order.
@@ -82,7 +105,7 @@ def _glpython_run_doctests(main_path):
   try:
     tests = sorted(doctest.DocTestFinder().find(module, module_name), key=lambda test: test.lineno or 0)
   except ValueError as error:
-    return json.dumps({"examplesError": f"ValueError: {error}", "errorHint": _glpython_error_hint(error)})
+    return json.dumps({"examplesError": f"ValueError: {error}", "errorHint": _glpython_doctest_blank_hint(error, module, module_name, source)})
   # DocTestRunner.run resets sys.displayhook to sys.__displayhook__ for every
   # test, so the runner's hook goes there for the duration.
   original_displayhook = sys.__displayhook__

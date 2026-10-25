@@ -10,7 +10,7 @@ export type ErrorHint =
   | { kind: 'zero-division' }
   | { kind: 'recursion' }
   | { kind: 'list-index' }
-  | { kind: 'doctest-blank'; line: number; function: string }
+  | { kind: 'doctest-blank'; line: number }
 
 // Where the error showed up: the REPL adds a question for an undefined name.
 export type ErrorHintContext = 'repl' | 'other'
