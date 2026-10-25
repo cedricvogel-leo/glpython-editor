@@ -74,11 +74,31 @@ body,
   }
 }
 
-/* "?size=large": bigger code (20px, line height 1.6), and the visualizer at
-   least as tall as the macro asks for (60% of the course window). */
+/* The visualizer is as tall as its content, with a small minimum, so a short
+   program leaves no empty area ("large" below sets its own minimum). */
+.embed-app .editor-panel {
+  min-height: 140px;
+}
+
+/* "?size=large": bigger code (20px, line height 1.6), the bar's text 16px,
+   and the visualizer at least as tall as the macro asks for (60% of the
+   course window). */
 .embed-app--large .visualizer-view {
   font-size: 20px;
   line-height: 1.6;
+}
+
+.embed-app--large .visualizer-bar,
+.embed-app--large .visualizer-step-count,
+.embed-app--large .visualizer-mode button,
+.embed-app--large .visualizer-options-button,
+.embed-app--large .visualizer-options-item {
+  font-size: 16px;
+}
+
+.embed-app--large .visualizer-bar svg {
+  width: 20px;
+  height: 20px;
 }
 
 .embed-app--large .editor-panel {
