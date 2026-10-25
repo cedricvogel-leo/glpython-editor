@@ -96,6 +96,11 @@ class _GlpythonScope:
     while scope is not None:
       if name in scope.vars:
         return scope.vars[name]
+      # A name the function assigns anywhere is local to it for the whole
+      # body (Python decides this when compiling): read before its
+      # assignment, it fails rather than falling back to a global.
+      if name in getattr(scope, "local_names", ()):
+        raise UnboundLocalError(f"cannot access local variable '{name}' where it is not associated with a value")
       scope = scope.parent if scope.kind != "function" else scope.module_scope
     import builtins
     if hasattr(builtins, name):
@@ -111,10 +116,22 @@ class _GlpythonScope:
 
 _glpython_module_scope = None
 
-def _glpython_make_function_scope(vars_dict):
+def _glpython_make_function_scope(vars_dict, local_names=()):
   scope = _GlpythonScope(vars_dict, parent=None, kind="function")
   scope.module_scope = _glpython_module_scope
+  scope.local_names = local_names
   return scope
+
+# The names local to a function, as Python's compiler decides them
+# (parameters and every name the body assigns, minus global/nonlocal ones).
+def _glpython_local_names(node):
+  import symtable
+  definition = ast.FunctionDef(name="_glpython_function", args=node.args, body=node.body, decorator_list=[], returns=None, type_params=[])
+  try:
+    table = symtable.symtable(ast.unparse(ast.fix_missing_locations(ast.Module(body=[definition], type_ignores=[]))), "<glpython>", "exec")
+    return frozenset(table.get_children()[0].get_locals())
+  except (SyntaxError, IndexError):
+    return frozenset()
 
 # ---------------------------------------------------------------------------
 # Step recording. Every recorded step captures a source span (line/col) and,
@@ -614,6 +631,7 @@ class _GlpythonFunction:
     outer = _glpython_current_func_stack[-1] if _glpython_current_func_stack else "<module>"
     self.__qualname__ = self.__name__ if outer == "<module>" else f"{outer}.<locals>.{self.__name__}"
     self._glpython_stub = None
+    self._glpython_locals = None
     # The file this "def" itself lives in, so a call-enter step recorded at
     # the *call site* (possibly in a different file, e.g. calling into an
     # imported module) can still tell the UI where to find the function's
@@ -659,7 +677,9 @@ class _GlpythonFunction:
         call_vars[arguments.vararg.arg] = args[len(positional_names):]
       if arguments.kwarg:
         call_vars[arguments.kwarg.arg] = {k: v for k, v in kwargs.items() if k not in positional_names}
-      scope = _glpython_make_function_scope(call_vars)
+      if self._glpython_locals is None:
+        self._glpython_locals = _glpython_local_names(self.node)
+      scope = _glpython_make_function_scope(call_vars, self._glpython_locals)
       _glpython_current_func_stack.append(self.__name__)
       if call_node is not None:
         _glpython_frame_id_counter += 1

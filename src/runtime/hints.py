@@ -1,4 +1,3 @@
-import json
 import re
 
 # A short hint shown below an error for the unit's common mistakes - Python's
@@ -41,12 +40,3 @@ def _glpython_error_hint(error):
     if message == "list index out of range":
       return {"kind": "list-index"}
   return None
-
-# The hint for the error the last Run ended with, for the worker, which only
-# sees that error as a JavaScript exception (see _glpython_run_project).
-_glpython_last_error = None
-
-def _glpython_last_error_hint():
-  global _glpython_last_error
-  error, _glpython_last_error = _glpython_last_error, None
-  return json.dumps(_glpython_error_hint(error) if error is not None else None)
