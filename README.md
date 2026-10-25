@@ -1,8 +1,9 @@
 # glpython-editor
 
 Embeddable Python editor + step-by-step execution visualizer + turtle graphics
-panel, extracted from [glpython](https://github.com/glpython-edu/glpython)
-so it can be reused in different host applications ("shells").
+panel, extracted from the [glpython IDE](https://glpython-edu.github.io/)
+([repo](https://github.com/glpython-edu/glpython-edu.github.io)) so it can be
+reused in different host applications ("shells").
 
 This package owns:
 
