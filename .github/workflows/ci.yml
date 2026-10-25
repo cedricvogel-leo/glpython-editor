@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      # The Python version Pyodide 0.26 brings (see src/pyodide-worker.js), so
+      # the runtime checks run the same language version as the browser.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      # npm ci also builds the library once (the "prepare" script).
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build:embed
+      # Builds the library again and checks the embed protocol against dist/.
+      - run: npm run test:protocol
+      # The visualizer runtime under CPython: columns, docstrings, condition
+      # comments, readable types.
+      - run: npm run test:runtime
+      - name: Not checked here
+        run: |
+          echo "::notice title=Not run in CI::Needs Pyodide in a browser, so it isn't checked here: the worker (run, REPL, doctests via Tests, input() bridge, gturtle) and the UI. Check these in the embed preview (npm run build:embed && npm run preview:embed)."
