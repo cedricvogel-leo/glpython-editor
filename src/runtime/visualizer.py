@@ -53,9 +53,13 @@ def _glpython_is_uninteresting_for_substitution(value):
   # enclosing Call node's own eval step show the real result instead.
   return callable(value) or isinstance(value, _glpython_types.ModuleType)
 
+# A value as the visualizer shows it: Python's repr, except that a type reads
+# the way learners write it ("int", "list", "NoneType" instead of
+# "<class 'int'>"), so "type(a) != list" steps to "int != list". The program's
+# own output (print, the REPL transcript) keeps Python's repr.
 def _glpython_safe_repr(value, limit=160):
   try:
-    text = repr(value)
+    text = value.__name__ if isinstance(value, type) else repr(value)
   except Exception:
     text = "<unrepresentable>"
   if len(text) > limit:
