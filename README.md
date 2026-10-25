@@ -127,7 +127,7 @@ texts are `visualizerModeLabel`, `visualizerModeBox` and
 ### Copying the evaluation as a → chain
 
 The **Copy → chain** item in the toolbar's **⋯ Options** menu copies the evaluation of the statement
-the scrubber is on (for a visualized REPL input: that input) in the course's
+the scrubber is on (for a visualized REPL entry: that input) in the course's
 paper notation: its expression, then one line per change, each starting with
 `→`, taking the same steps as the visualizer. A call to a function with a single
 `return <expression>` is replaced as in substitution mode. Any other call is
@@ -181,10 +181,16 @@ last Run, so learners can call the file's functions directly. An expression
 shows its value (`None` too, greyed out); a statement such as `a = 5` shows
 nothing; a `def` runs but adds the hint `replDefinitionHint`; an error shows
 Python's last traceback line. Run starts a fresh namespace and clears the
-transcript, while arrow up/down still recalls earlier inputs. The input line's
-**Visualize input** button (`replVisualize`) traces that input step by step against the same namespace,
-as a dry run that leaves the namespace unchanged, with call boxes drawn from
-the file as it was at the last Run. Disable the REPL with
+transcript, while arrow up/down still recalls earlier inputs. Every entry of
+the transcript has a **Visualize** button (`replVisualizeEntry`) that traces
+that input step by step, an entry with an error up to its error, with call
+boxes drawn from the file as it was at the last Run. It replays rather than
+stores Python's state: the worker runs that file and the inputs before the
+entry again, in a namespace of its own, and checks that each prints and
+evaluates to what it did the first time. If the replay needs `input()` or
+comes out differently (e.g. random numbers), the entry shows a note
+(`replReplayNote`) instead of a visualization. The live namespace stays as
+it was. An input that doesn't compile has no button. Disable the REPL with
 `capabilities={{ repl: false }}`; the embed shows it in `eval` mode only, and
 resetting the embed discards the namespace.
 

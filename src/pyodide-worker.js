@@ -12,6 +12,14 @@ let mountedFiles = []
 // rather than from whatever the editor holds now.
 let lastRunFiles = {}
 let lastRunMainFile = 'main.py'
+// What the session since the last Run consists of, so an earlier REPL input
+// can be visualized by replaying it (see 'visualize-repl-entry'): whether a
+// Run happened, what it printed (traceback included), and every REPL input
+// since, with what it printed and evaluated to. Only text is kept, never
+// Python objects.
+let hasRun = false
+let lastRunOutcome = null
+let replLog = []
 // The same for the last Tests run, whose definitions a failing example is
 // visualized against.
 let lastTestFiles = {}
@@ -108,6 +116,61 @@ self.requestInputFromMainThread = requestInputFromMainThread
 
 
 
+// Output and values compared with what they were the first time, except
+// where Python itself varies between runs: object addresses in default reprs.
+const replayComparable = (text) => text.replace(/ at 0x[0-9a-f]+>/g, ' at 0x…>')
+
+// Visualizes REPL input `entryId` by replaying the session up to it (see
+// _glpython_replay_begin): the file as it was at the Run, then the inputs
+// before it, each checked against what it printed and evaluated to then, and
+// finally a trace of the input itself, checked the same way. Answers
+// { trace, source }, or { note } when the replay needs input() ('input') or
+// doesn't reproduce the session ('differs') - e.g. random numbers - rather
+// than show a visualization of something else.
+async function replayReplEntry(pyodide, entryId) {
+  const index = replLog.findIndex((entry) => entry.id === entryId)
+  if (index === -1) return { note: 'differs' }
+  const target = replLog[index]
+  let output = ''
+  const capture = () => {
+    output = ''
+    pyodide.setStdout({ batched: (text) => { output += `${text}\n` } })
+    pyodide.setStderr({ batched: (text) => { output += `${text}\n` } })
+  }
+  const needsInput = () => callPython(pyodide, '_glpython_replay_needed_input') === true
+  const projectPaths = [...Object.keys(lastRunFiles), 'gturtle.py'].map((path) => `/${path}`)
+  callPython(pyodide, '_glpython_replay_begin', JSON.stringify(projectPaths))
+  try {
+    if (hasRun) {
+      await mountProjectFiles(pyodide, lastRunFiles)
+      capture()
+      const traceback = String(callPython(pyodide, '_glpython_replay_file', `/${lastRunMainFile}`))
+      if (needsInput()) return { note: 'input' }
+      if (lastRunOutcome === null || replayComparable(`${output}${traceback}`) !== replayComparable(lastRunOutcome)) return { note: 'differs' }
+    }
+    for (const entry of replLog.slice(0, index)) {
+      capture()
+      const resultJson = String(callPython(pyodide, '_glpython_replay_input', entry.source))
+      if (needsInput()) return { note: 'input' }
+      if (replayComparable(output) !== replayComparable(entry.output) || replayComparable(resultJson) !== replayComparable(entry.resultJson)) return { note: 'differs' }
+    }
+    const trace = JSON.parse(String(callPython(pyodide, '_glpython_run_visual_repl', target.source, JSON.stringify(lastRunFiles), lastRunMainFile, 'replay')))
+    if (needsInput()) return { note: 'input' }
+    // A trace cut off at the step limit says so itself; what it would have
+    // ended with can't be compared.
+    if (!trace.truncated) {
+      const expected = JSON.parse(target.resultJson)
+      const printed = (text) => replayComparable(text).replace(/\n+$/, '')
+      if ('replError' in trace || printed(trace.output) !== printed(target.output)
+        || (trace.errorMessage ?? null) !== (expected.error ?? null)
+        || (expected.value !== undefined && replayComparable(trace.value?.value ?? '') !== replayComparable(expected.value))) return { note: 'differs' }
+    }
+    return { trace, source: target.source }
+  } finally {
+    callPython(pyodide, '_glpython_replay_end')
+  }
+}
+
 self.onmessage = async (event) => {
   if (event.data.type === 'init-input-channel') {
     inputControl = new Int32Array(event.data.buffer, 0, 2)
@@ -124,7 +187,11 @@ self.onmessage = async (event) => {
       lastRunMainFile = event.data.project.mainFile
       pyodide.setStdout({ batched: (text) => { runOutput += `${text}\n` } })
       pyodide.setStderr({ batched: (text) => { runOutput += `${text}\n` } })
+      hasRun = true
+      lastRunOutcome = null
+      replLog = []
       callPython(pyodide, '_glpython_run_project', `/${event.data.project.mainFile}`)
+      lastRunOutcome = runOutput
       const graphicsJson = callPython(pyodide, '_glpython_graphics_json')
       self.postMessage({ type: 'result', output: runOutput.trim(), graphics: JSON.parse(String(graphicsJson)) })
     } catch (error) {
@@ -133,6 +200,7 @@ self.onmessage = async (event) => {
       // Pyodide's own error text only if the program never ran.
       let report = null
       try { report = JSON.parse(String(callPython(await getPyodide(), '_glpython_take_error_report'))) } catch {}
+      if (report) lastRunOutcome = `${runOutput}${report.traceback}`
       self.postMessage(report
         ? { type: 'error', output: `${runOutput}${report.traceback}`.trimEnd(), errorHint: report.errorHint }
         : { type: 'error', output: String(error), errorHint: null })
@@ -163,7 +231,9 @@ self.onmessage = async (event) => {
       const pyodide = await getPyodide()
       pyodide.setStdout({ batched: (text) => { output += `${text}\n` } })
       pyodide.setStderr({ batched: (text) => { output += `${text}\n` } })
-      const result = JSON.parse(String(callPython(pyodide, '_glpython_repl', event.data.source)))
+      const resultJson = String(callPython(pyodide, '_glpython_repl', event.data.source))
+      replLog.push({ id: event.data.id, source: event.data.source, output, resultJson })
+      const result = JSON.parse(resultJson)
       const graphicsJson = callPython(pyodide, '_glpython_graphics_json')
       self.postMessage({ type: 'repl-result', id: event.data.id, output, graphics: JSON.parse(String(graphicsJson)), ...result })
     } catch (error) {
@@ -185,6 +255,20 @@ self.onmessage = async (event) => {
         return
       }
       self.postMessage({ type: 'trace-result', ...result, rootPath: REPL_PATH, sources: { ...files, [REPL_PATH]: event.data.source } })
+    } catch (error) {
+      self.postMessage({ type: 'trace-result', trace: [], ast: {}, output: '', graphics: [], error: String(error), truncated: false })
+    }
+    return
+  }
+
+  if (event.data.type === 'visualize-repl-entry') {
+    const entryId = event.data.id
+    try {
+      const pyodide = await getPyodide()
+      const result = await replayReplEntry(pyodide, entryId)
+      self.postMessage(result.note
+        ? { type: 'repl-replay-note', id: entryId, note: result.note }
+        : { type: 'trace-result', ...result.trace, rootPath: REPL_PATH, sources: { ...lastRunFiles, [REPL_PATH]: result.source } })
     } catch (error) {
       self.postMessage({ type: 'trace-result', trace: [], ast: {}, output: '', graphics: [], error: String(error), truncated: false })
     }
