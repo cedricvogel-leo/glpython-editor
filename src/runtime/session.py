@@ -25,12 +25,25 @@ def _glpython_error_message(error):
   text = error.msg if isinstance(error, SyntaxError) and error.msg else str(error)
   return f"{type(error).__name__}: {text}" if text else type(error).__name__
 
+# Run, Tests and Visualize import the project's files as they are now: the
+# modules of every file mounted now and at the time before are dropped, so a
+# changed file is read again and a removed or renamed one can't be imported
+# under its old name anymore (as in CPython: ModuleNotFoundError) - its old
+# module used to stay. The import system's directory caches are cleared too,
+# and no bytecode is written, so a file changed within the same second keeps
+# no stale .pyc.
+sys.dont_write_bytecode = True
+_glpython_mounted_paths = set()
+
 def _glpython_invalidate_modules(mounted_paths_json):
-  for mounted_path in json.loads(mounted_paths_json):
-    for module_name in list(sys.modules):
-      module = sys.modules[module_name]
-      if getattr(module, "__file__", None) == mounted_path:
-        del sys.modules[module_name]
+  global _glpython_mounted_paths
+  import importlib
+  mounted_paths = set(json.loads(mounted_paths_json))
+  for module_name in list(sys.modules):
+    if getattr(sys.modules[module_name], "__file__", None) in mounted_paths | _glpython_mounted_paths:
+      del sys.modules[module_name]
+  _glpython_mounted_paths = mounted_paths
+  importlib.invalidate_caches()
 
 # Python's traceback for an error the program raised, as CPython prints it
 # (carets, chained exceptions, a SyntaxError's caret line), without this
