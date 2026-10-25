@@ -1,6 +1,8 @@
 import builtins
 import json
+import os
 import sys
+import traceback
 
 # The namespace the last Run executed the main file in. REPL inputs run in it
 # afterwards (like "python -i"), so learners can call the file's functions;
@@ -24,8 +26,48 @@ def _glpython_invalidate_modules(mounted_paths_json):
       if getattr(module, "__file__", None) == mounted_path:
         del sys.modules[module_name]
 
+# Python's traceback for an error the program raised, as CPython prints it
+# (carets, chained exceptions, a SyntaxError's caret line), without this
+# runtime's own frames ("<exec>") and with the project's files named as in
+# the editor ("main.py", not "/main.py"); other files (the standard library)
+# keep their paths, as in CPython.
+def _glpython_traceback_text(error, root):
+  prefix = root.rstrip("/") + "/"
+  def project_name(path):
+    if path and path.startswith(prefix) and not path.startswith("/lib/"):
+      return path[len(prefix):]
+    return None
+  report = traceback.TracebackException.from_exception(error)
+  renamed = {}
+  parts, seen = [report], set()
+  while parts:
+    part = parts.pop()
+    if part is None or id(part) in seen:
+      continue
+    seen.add(id(part))
+    part.stack = traceback.StackSummary.from_list([frame for frame in part.stack if frame.filename != "<exec>"])
+    for path in [frame.filename for frame in part.stack] + [getattr(part, "filename", None)]:
+      name = project_name(path)
+      if name:
+        renamed[path] = name
+    parts.extend([part.__cause__, part.__context__, *(part.exceptions or [])])
+  text = "".join(report.format())
+  for path, name in renamed.items():
+    text = text.replace(f'File "{path}"', f'File "{name}"')
+  return text
+
+# The error the last Run ended with: Python's traceback (see above) and the
+# hint for it (hints.py), for the worker, which only sees a JavaScript
+# exception. None if the program never ran (e.g. the file was missing).
+_glpython_last_error_report = None
+
+def _glpython_take_error_report():
+  global _glpython_last_error_report
+  report, _glpython_last_error_report = _glpython_last_error_report, None
+  return json.dumps(report)
+
 def _glpython_run_project(main_path):
-  global _glpython_repl_namespace, _glpython_last_error
+  global _glpython_repl_namespace, _glpython_last_error_report
   if "/" not in sys.path:
     sys.path.insert(0, "/")
   # Executed in a plain dict (rather than runpy.run_path, which hands back
@@ -36,13 +78,13 @@ def _glpython_run_project(main_path):
   _glpython_repl_namespace = {"__name__": "__main__", "__file__": main_path, "__builtins__": builtins}
   with open(main_path, "r", encoding="utf-8") as handle:
     source = handle.read()
-  _glpython_last_error = None
+  _glpython_last_error_report = None
   try:
     exec(compile(source, main_path, "exec"), _glpython_repl_namespace)
   except BaseException as error:
-    # Raised on unchanged (the worker shows Python's traceback); kept for
-    # its hint (hints.py).
-    _glpython_last_error = error
+    # Raised on unchanged; the worker shows this report instead of
+    # Pyodide's own traceback.
+    _glpython_last_error_report = {"traceback": _glpython_traceback_text(error, os.path.dirname(main_path)), "errorHint": _glpython_error_hint(error)}
     raise
 
 def _glpython_graphics_json():

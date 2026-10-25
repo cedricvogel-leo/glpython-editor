@@ -43,7 +43,8 @@ def run(source):
             message = None
         except BaseException as error:
             message = namespace["_glpython_error_message"](error)
-    return message, json.loads(namespace["_glpython_last_error_hint"]())
+    report = json.loads(namespace["_glpython_take_error_report"]())
+    return message, report["errorHint"] if report else None
 
 
 def visualize(source):

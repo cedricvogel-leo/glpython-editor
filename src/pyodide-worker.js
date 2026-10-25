@@ -116,23 +116,26 @@ self.onmessage = async (event) => {
   }
 
   if (event.data.type === 'run') {
+    let runOutput = ''
     try {
       const pyodide = await getPyodide()
       await mountProjectFiles(pyodide, event.data.project.files)
       lastRunFiles = event.data.project.files
       lastRunMainFile = event.data.project.mainFile
-      let output = ''
-      pyodide.setStdout({ batched: (text) => { output += `${text}\n` } })
-      pyodide.setStderr({ batched: (text) => { output += `${text}\n` } })
+      pyodide.setStdout({ batched: (text) => { runOutput += `${text}\n` } })
+      pyodide.setStderr({ batched: (text) => { runOutput += `${text}\n` } })
       callPython(pyodide, '_glpython_run_project', `/${event.data.project.mainFile}`)
       const graphicsJson = callPython(pyodide, '_glpython_graphics_json')
-      self.postMessage({ type: 'result', output: output.trim(), graphics: JSON.parse(String(graphicsJson)) })
+      self.postMessage({ type: 'result', output: runOutput.trim(), graphics: JSON.parse(String(graphicsJson)) })
     } catch (error) {
-      // Python's traceback as it is, plus the hint for the error the file
-      // raised (none if it never got to run).
-      let errorHint = null
-      try { errorHint = JSON.parse(String(callPython(await getPyodide(), '_glpython_last_error_hint'))) } catch {}
-      self.postMessage({ type: 'error', output: String(error), errorHint })
+      // What the program printed, then Python's traceback as CPython shows
+      // it, plus the hint for its error (see _glpython_traceback_text).
+      // Pyodide's own error text only if the program never ran.
+      let report = null
+      try { report = JSON.parse(String(callPython(await getPyodide(), '_glpython_take_error_report'))) } catch {}
+      self.postMessage(report
+        ? { type: 'error', output: `${runOutput}${report.traceback}`.trimEnd(), errorHint: report.errorHint }
+        : { type: 'error', output: String(error), errorHint: null })
     }
     return
   }
