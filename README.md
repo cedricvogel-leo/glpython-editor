@@ -301,8 +301,15 @@ and monospace fonts, no web fonts). A host can override any of them:
 | `--glp-font-code`, `--glp-font-ui`, `--glp-radius` | fonts and corner radius |
 
 The embed is flat: no cards, its sections only separated by `--glp-border`
-lines, so the host draws the one frame around it. The Monaco editor still uses
-its built-in `vs-dark` theme.
+lines, so the host draws the one frame around it.
+
+The Monaco editor uses the theme `glpython` (`src/monacoTheme.ts`), built from
+the same tokens when the editor mounts (later changes to the variables need a
+reload), and glpython's own Python language `glpython-python`
+(`src/pythonLanguage.ts`): Monaco's Python definition, but only Python's
+keywords as keywords (not builtins such as `print` or `type`), `True`,
+`False` and `None` as values, and comments after code. The visualizer
+highlights code with the same language.
 
 ## Development
 
