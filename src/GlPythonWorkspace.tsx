@@ -1242,13 +1242,9 @@ function GlPythonWorkspace(props: GlPythonWorkspaceProps) {
       runTests()
     }
     if (command.type === 'stop') stopPython()
-    if (command.type === 'reset') {
-      exitVisualizer()
-      setConsoleEntries([])
-      setOutput(t.readyOutput)
-      setOutputErrorHint(null)
-      setGraphics([])
-    }
+    // Restarts Python and clears the console, as the Reset button does (the
+    // IDE's «Python neu starten» in its menu).
+    if (command.type === 'reset') resetPython()
     // Commands are immutable events. Their id, rather than render-time callback
     // identities, determines whether the effect should run again.
     // eslint-disable-next-line react-hooks/exhaustive-deps

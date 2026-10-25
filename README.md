@@ -188,7 +188,8 @@ a visualization), the run button becomes **Stop** (`stop`: «Stoppen»). Stoppin
 ends Python's worker and starts a new one: the code stays, the console keeps
 what was printed and adds `stoppedNote`, and the REPL starts in an empty
 namespace (earlier entries can't be visualized anymore). Hosts can stop with
-the command `{ id, type: 'stop' }`, and learn when Python is busy through the
+the command `{ id, type: 'stop' }` (and restart Python with an empty console,
+as Reset does, with `{ id, type: 'reset' }`), and learn when Python is busy through the
 `onBusyChange` prop.
 
 ### REPL
