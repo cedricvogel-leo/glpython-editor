@@ -638,6 +638,10 @@ class _GlpythonFunction:
     # own source for its box content.
     self.def_path = _glpython_current_path
 
+  # As Python shows a function: "<function quadrat at 0x...>".
+  def __repr__(self):
+    return f"<function {self.__qualname__} at {hex(id(self))}>"
+
   def __call__(self, *args, **kwargs):
     global _glpython_call_depth, _glpython_frame_id_counter, _glpython_pending_call_node, _glpython_last_call_frame_id, _glpython_last_call_return, _glpython_current_path
     # Consumed immediately, before anything else can overwrite it - see the
@@ -1122,7 +1126,9 @@ def _glpython_exec_stmt(node, scope):
       _glpython_fallback_exec(node, scope)
       _glpython_record(node, "exec", _glpython_node_source(node), None, _glpython_current_func(), _glpython_snapshot_locals(scope))
       return
-    handler(node, scope)
+    # An expression statement's handler returns its value (see
+    # _glpython_trace_program's report_value).
+    return handler(node, scope)
   except BaseException as error:
     # Same error-site tagging as _glpython_eval, for exceptions raised by a
     # statement itself rather than one of its expressions (e.g. "raise").
@@ -1390,6 +1396,9 @@ def _glpython_run_visual(main_path, file_paths_json):
 # files as they were at that Run (the editor may have changed since), which
 # is also what the UI must render the call boxes from. An input that doesn't
 # parse isn't traced at all: it reports its error line like a REPL input.
+# An earlier input of the REPL's history is traced against the namespace its
+# replay rebuilt (see _glpython_replay_begin), and reports its value, so the
+# worker can check the replay reproduced what the learner saw.
 def _glpython_run_visual_repl(source, sources_json, main_path, namespace="repl"):
   try:
     ast.parse(source, _GLPYTHON_REPL_PATH, "exec")
@@ -1399,8 +1408,8 @@ def _glpython_run_visual_repl(source, sources_json, main_path, namespace="repl")
   sources[_GLPYTHON_REPL_PATH] = source
   # A failing doctest example is traced against the definitions the Tests run
   # loaded (see doctests.py), a REPL input against the last Run's.
-  values = _glpython_test_namespace if namespace == "test" else _glpython_repl_namespace
-  return _glpython_trace_program(_GLPYTHON_REPL_PATH, sources, lambda scope, trees: _glpython_fill_scope_from_repl(scope, trees, main_path, values))
+  values = _glpython_test_namespace if namespace == "test" else _glpython_replay_namespace if namespace == "replay" else _glpython_repl_namespace
+  return _glpython_trace_program(_GLPYTHON_REPL_PATH, sources, lambda scope, trees: _glpython_fill_scope_from_repl(scope, trees, main_path, values), report_value=namespace == "replay")
 
 # Fills the traced module scope from the REPL namespace. Functions the last
 # Run defined at the top level of the file it ran are swapped for this
@@ -1470,7 +1479,9 @@ def _glpython_hidden_ranges(source, tree):
     ranges.append([first.lineno, 0, first.end_lineno + 1, 0])
   return ranges
 
-def _glpython_trace_program(main_path, sources, fill_scope):
+# With report_value, a main file that is a single expression (a REPL input)
+# also reports its value as _glpython_repl does.
+def _glpython_trace_program(main_path, sources, fill_scope, report_value=False):
   global _glpython_trace_log, _glpython_step_count, _glpython_stdout_len, _glpython_graphics_commands
   global _glpython_module_scope, _glpython_current_path, _glpython_current_func_stack, _glpython_call_depth
   global _glpython_frame_id_counter, _glpython_frame_stack, _glpython_pending_call_node, _glpython_last_call_frame_id
@@ -1522,6 +1533,7 @@ def _glpython_trace_program(main_path, sources, fill_scope):
   error_message = None
   error_hint = None
   truncated = False
+  value = None
   try:
     module_vars = {"__name__": "__main__", "__file__": main_path}
     _glpython_module_scope = _GlpythonScope(module_vars, parent=None, kind="module")
@@ -1532,7 +1544,10 @@ def _glpython_trace_program(main_path, sources, fill_scope):
     try:
       if main_tree is None:
         raise SyntaxError(f"could not parse {main_path}")
-      _glpython_exec_stmts(main_tree.body, _glpython_module_scope)
+      if report_value and len(main_tree.body) == 1 and isinstance(main_tree.body[0], ast.Expr):
+        value = _glpython_repl_value(_glpython_exec_stmt(main_tree.body[0], _glpython_module_scope))
+      else:
+        _glpython_exec_stmts(main_tree.body, _glpython_module_scope)
     except _GlpythonTraceLimit:
       truncated = True
     except _GlpythonReturn:
@@ -1562,4 +1577,5 @@ def _glpython_trace_program(main_path, sources, fill_scope):
     "errorMessage": error_message,
     "errorHint": error_hint,
     "truncated": truncated,
+    "value": value,
   })

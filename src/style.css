@@ -176,7 +176,7 @@
   .editor-actions { width: 100%; }
   .editor-actions .secondary-button:first-child { display: none; }
   .secondary-button, .run-button { flex: 1; justify-content: center; }
-  .repl-line .repl-visualize, .visualizer-bar .secondary-button { flex: 0 0 auto; }
+  .visualizer-bar .secondary-button { flex: 0 0 auto; }
   .statusbar { padding: 0 14px; }
   .output-hint { display: none; }
   .main-split { flex-direction: column; }
@@ -310,7 +310,15 @@
 .output-panel pre { max-height: 240px; overflow-y: auto; }
 .repl-entry { display: block; margin-top: 6px; }
 .repl-entry > span { display: block; }
+.repl-entry > .repl-echo { display: flex; align-items: baseline; gap: 12px; }
 .repl-echo { color: var(--glp-text-muted); }
+.repl-echo > span { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* A history entry's «Visualisieren»: a quiet text label at the right edge,
+   underlined on hover like a link. */
+.repl-entry-visualize { flex-shrink: 0; margin-left: auto; padding: 0 4px; border: 0; border-radius: var(--glp-radius); color: var(--glp-accent); background: transparent; cursor: pointer; font: 600 12px/1.6 var(--glp-font-ui); }
+.repl-entry-visualize:hover:not(:disabled) { text-decoration: underline; }
+.repl-entry-visualize:disabled { color: var(--glp-text-muted); cursor: not-allowed; }
+.repl-note { color: var(--glp-text-muted); font: italic 13px/1.5 var(--glp-font-ui); white-space: normal; }
 .repl-value { color: var(--glp-text); }
 .repl-value--none { color: var(--glp-text-muted); }
 .repl-hint { color: var(--glp-warning); font-style: italic; }
@@ -318,7 +326,6 @@
 .repl-line { display: flex; align-items: center; gap: 8px; padding: 12px; background: var(--glp-surface); border-top: 1px solid var(--glp-border); }
 .repl-prompt { flex-shrink: 0; color: var(--glp-text-muted); font: 600 15px/1.6 var(--glp-font-code); }
 .repl-input { flex: 1; min-width: 0; padding: 4px 8px; color: var(--glp-text); background: var(--glp-bg); border: 1px solid var(--glp-border-control); border-radius: var(--glp-radius); font: 15px/1.6 var(--glp-font-code); }
-.repl-visualize { flex-shrink: 0; }
 
 /* Nested call boxes list their variables in a row below their code instead of
    a side panel: each level of nesting would otherwise add a whole panel's width,

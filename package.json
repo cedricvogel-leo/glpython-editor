@@ -26,7 +26,7 @@
     "preview:embed": "vite preview --config vite.embed.config.ts",
     "test:protocol": "npm run build && node scripts/check-embed-protocol.mjs",
     "test:hints": "node scripts/check-error-hints.mjs",
-    "test:runtime": "python3 -B scripts/check-runtime-columns.py && python3 -B scripts/check-runtime-values.py && python3 -B scripts/check-runtime-doctests.py && python3 -B scripts/check-runtime-calls.py && python3 -B scripts/check-runtime-hints.py && python3 -B scripts/check-runtime-fidelity.py",
+    "test:runtime": "python3 -B scripts/check-runtime-columns.py && python3 -B scripts/check-runtime-values.py && python3 -B scripts/check-runtime-doctests.py && python3 -B scripts/check-runtime-calls.py && python3 -B scripts/check-runtime-hints.py && python3 -B scripts/check-runtime-fidelity.py && python3 -B scripts/check-runtime-replay.py",
     "prepare": "npm run build"
   },
   "peerDependencies": {

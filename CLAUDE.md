@@ -13,7 +13,7 @@ npm run build          # tsc -b && vite build && copy src/style.css -> dist/ (li
 npm run dev            # vite build --watch, for use with npm link/yalc in a host shell
 npm run lint           # oxlint
 npm run test:protocol  # builds the library, then runs scripts/check-embed-protocol.mjs against dist/
-npm run test:runtime   # the runtime under CPython: scripts/check-runtime-{columns,values,doctests,calls,hints}.py
+npm run test:runtime   # the runtime under CPython: scripts/check-runtime-{columns,values,doctests,calls,hints,fidelity,replay}.py
 npm run test:hints     # the error hints' wording (de/en) against the built dist/ (run a build first)
 npm run build:embed    # builds the iframe app + demo page into dist-embed/
 npm run preview:embed  # serves dist-embed/ with COOP/COEP headers; open /demo.html
@@ -45,7 +45,8 @@ There is no unit test framework. The automated checks are `test:protocol` (plain
   - Exceptions get tagged with the innermost student node and frame that raised them. A failed run then ends in one `error` step, and `error` holds a traceback of the learner's own lines (`errorMessage` is its last line).
   - A call into a function from another file switches `_glpython_current_path` while its body runs.
   - `_glpython_short_form` marks functions whose body is a single `return <expr>` (docstring allowed). Their call-enter steps carry `shortForm` for the UI's substitution mode.
-  - `_glpython_run_visual_repl` traces a REPL input as the pseudo-file `<repl>` against the REPL namespace. The file's functions are swapped for traced versions of their `def`s, taken from the sources of the last Run. It's a dry run that leaves the namespace unchanged.
+  - `_glpython_run_visual_repl` traces a REPL input as the pseudo-file `<repl>` against a namespace (`replay`, or the Tests run's for a failing doctest example). The file's functions are swapped for traced versions of their `def`s, taken from the sources of the last Run. It's a dry run that leaves the namespace unchanged.
+- **Visualizing a REPL entry replays the session** (`session.py`'s `_glpython_replay_*`, driven by the worker's `replayReplEntry`): the worker keeps only text (the last Run's files and output, each input since with what it printed and its result JSON), reruns the file and the earlier inputs in a namespace of their own and compares each with the original (object addresses masked); then it traces the entry and compares its output, error and value too. `input()` raises during a replay. Any difference, or `input()`, ends in a `repl-replay-note` instead of a trace. The project's modules are set aside and restored, so the live session is untouched. `check-runtime-replay.py` checks this under CPython.
   - `_GlpythonFunction` calls a stub with the same parameters first, so a call with wrong arguments raises Python's own `TypeError` (same message) at the call site.
   - Columns: `ast` counts UTF-8 bytes, `tokenize` characters, the UI UTF-16 code units. Every offset into a line goes through `_glpython_text_before` (the text in front of it, for slicing) or `_glpython_ui_column` (a column for the UI); never slice a line by an `ast` offset directly.
   - Values are shown through `_glpython_safe_repr`, which writes types as learners do (`int`, not `<class 'int'>`); the program's own output keeps Python's repr.
@@ -54,7 +55,8 @@ Worker messages:
 - `run` → `result`/`error`
 - `run-visual` → `trace-result` (`{trace, ast, output, graphics, error, errorMessage, truncated}`)
 - `repl` → `repl-result`
-- `run-visual-repl` → `trace-result` with `rootPath`/`sources`, or `repl-result` if the input doesn't parse
+- `run-visual-repl` (a doctest example) → `trace-result` with `rootPath`/`sources`, or `repl-result` if the input doesn't parse
+- `visualize-repl-entry` (`id` of a REPL input) → `trace-result` with `rootPath`/`sources`, or `repl-replay-note` (`note: 'input' | 'differs'`)
 - `init-input-channel`; `input_request`
 
 **UI side.**

@@ -33,7 +33,10 @@ export const coreStrings: Record<UiLocale, CoreStrings> = {
     visualizerCollapsedCalls: (count, call) => `… ${count} more calls${call ? ` of ${call}` : ''} …`,
     replInputLabel: 'Python input',
     replDefinitionHint: 'Definitions belong in the file.',
-    replVisualize: 'Visualize input',
+    replVisualizeEntry: 'Visualize',
+    replReplayNote: (reason) => reason === 'input'
+      ? "Can't be visualized: the history up to here uses input()."
+      : "Can't be visualized: replaying the history gave a different result, e.g. because of random numbers.",
     visualizerModeLabel: 'Display',
     visualizerModeBox: 'Box',
     visualizerModeSubstitution: 'Substitution',
@@ -100,7 +103,10 @@ export const coreStrings: Record<UiLocale, CoreStrings> = {
     visualizerCollapsedCalls: (count, call) => `… ${count} weitere Aufrufe${call ? ` von ${call}` : ''} …`,
     replInputLabel: 'Python-Eingabe',
     replDefinitionHint: 'Definitionen gehören in die Datei.',
-    replVisualize: 'Eingabe visualisieren',
+    replVisualizeEntry: 'Visualisieren',
+    replReplayNote: (reason) => reason === 'input'
+      ? 'Kann nicht visualisiert werden: Der Verlauf bis hier verwendet input().'
+      : 'Kann nicht visualisiert werden: Beim Wiederholen des Verlaufs kam etwas anderes heraus, z. B. wegen Zufallszahlen.',
     visualizerModeLabel: 'Darstellung',
     visualizerModeBox: 'Kasten',
     visualizerModeSubstitution: 'Ersetzung',

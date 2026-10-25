@@ -4,6 +4,7 @@
   own output, then the traceback - without the runtime's own frames, and with
   the project's files named as in the editor ("main.py", where CPython shows
   the absolute path).
+- The visualizer shows a function as Python does ("<function f at 0x...>").
 - The visualizer treats a function's names as Python does: a name the
   function assigns is local throughout it, so reading it first raises
   UnboundLocalError (not NameError, and not the global of that name).
@@ -87,6 +88,22 @@ for source in PROGRAMS:
     result = json.loads(namespace["_glpython_trace_program"]("main.py", {"main.py": source}, None))
     if (result["errorMessage"], result["output"]) != (expected, printed.getvalue()):
         failures.append(f"visualizer {source!r}: {result['errorMessage']!r} / {result['output']!r}, Python {expected!r} / {printed.getvalue()!r}")
+
+# --- Visualizer: a function shows as in Python ------------------------------
+import re
+FUNCTIONS = [
+    "def quadrat(x):\n    return x * x\nprint(quadrat)\n",
+    "def aussen():\n    def innen():\n        return 1\n    return innen\nprint(aussen())\n",
+    "f = lambda x: x\nprint(f, [f])\n",
+]
+address = lambda text: re.sub(r" at 0x[0-9a-f]+>", " at 0x…>", text)
+for source in FUNCTIONS:
+    printed = io.StringIO()
+    with contextlib.redirect_stdout(printed):
+        exec(source, {})
+    result = json.loads(namespace["_glpython_trace_program"]("main.py", {"main.py": source}, None))
+    if address(result["output"]) != address(printed.getvalue()):
+        failures.append(f"visualizer {source!r}: printed {result['output']!r}, Python {printed.getvalue()!r}")
 
 if failures:
     print("\n".join(failures))
