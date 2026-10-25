@@ -80,9 +80,11 @@ body,
   min-height: 140px;
 }
 
-/* The Tests report is as tall as its content too (the host's iframe follows
-   it), instead of scrolling inside a fixed height as in the IDE. */
-.embed-app .test-report {
+/* The Tests report and the output are as tall as their content too (the
+   host's iframe follows them), instead of scrolling inside a fixed height
+   as in the IDE - so a hint below a traceback is never scrolled away. */
+.embed-app .test-report,
+.embed-app .output-panel pre {
   max-height: none;
   overflow: visible;
 }
