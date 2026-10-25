@@ -80,6 +80,13 @@ body,
   min-height: 140px;
 }
 
+/* The Tests report is as tall as its content too (the host's iframe follows
+   it), instead of scrolling inside a fixed height as in the IDE. */
+.embed-app .test-report {
+  max-height: none;
+  overflow: visible;
+}
+
 /* "?size=large": bigger code (20px, line height 1.6), the bar's text 16px,
    and the visualizer at least as tall as the macro asks for (60% of the
    course window). */
