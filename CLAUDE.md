@@ -13,7 +13,7 @@ npm run build          # tsc -b && vite build && copy src/style.css -> dist/ (li
 npm run dev            # vite build --watch, for use with npm link/yalc in a host shell
 npm run lint           # oxlint
 npm run test:protocol  # builds the library, then runs scripts/check-embed-protocol.mjs against dist/
-npm run test:runtime   # the visualizer runtime under CPython: scripts/check-runtime-columns.py and check-runtime-values.py
+npm run test:runtime   # the runtime under CPython: scripts/check-runtime-{columns,values,doctests}.py
 npm run build:embed    # builds the iframe app + demo page into dist-embed/
 npm run preview:embed  # serves dist-embed/ with COOP/COEP headers; open /demo.html
 ```
