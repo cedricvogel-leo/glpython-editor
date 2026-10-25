@@ -100,7 +100,15 @@ their middle boxes into one "… N more calls of f(x) …" marker
 
 ### Box and substitution mode
 
-The visualizer's toolbar switches between two ways of showing a function call.
+The visualizer's toolbar is one line: first step, previous step, next step,
+last step, the scrubber, the step counter, the box/substitution switch, the
+**⋯ Options** menu (animated steps, and with `export` the → chain's comments and
+copy button) and ✕ to exit (`visualizerFirstStep`, `visualizerLastStep`,
+`visualizerOptions`; ✕ uses `exitVisualizer`). The variables panel only appears
+when there are variables; in a visualizer narrower than 900px it sits below the
+code.
+
+The toolbar switches between two ways of showing a function call.
 In **substitution** mode (the default), a call to a function whose body is a
 single `return <expression>` (optionally after a docstring) is replaced at its
 call site by that expression, with its parameters already replaced by their
@@ -118,7 +126,7 @@ texts are `visualizerModeLabel`, `visualizerModeBox` and
 
 ### Copying the evaluation as a → chain
 
-The toolbar's **Copy → chain** button copies the evaluation of the statement
+The **Copy → chain** item in the toolbar's **⋯ Options** menu copies the evaluation of the statement
 the scrubber is on (for a visualized REPL input: that input) in the course's
 paper notation: its expression, then one line per change, each starting with
 `→`, taking the same steps as the visualizer. A call to a function with a single
@@ -127,7 +135,7 @@ replaced by the expression of the return it executed, with its parameters and
 local variables already filled in, and a comment naming the condition that
 chose that return (`# 2 == 0 is False`) and whether its body has local
 variables. A failing run ends with Python's error line. Definitions are never
-exported. The **Comments** checkbox turns the comments off; it is remembered per
+exported. The menu's **Comments** item turns the comments off; it is remembered per
 browser. Texts: `copyChain`, `copyChainDone`, `copyChainFailed`,
 `copyChainComments`, `chainConditionComment`, `chainLocalsComment`.
 
@@ -158,7 +166,7 @@ shows its value (`None` too, greyed out); a statement such as `a = 5` shows
 nothing; a `def` runs but adds the hint `replDefinitionHint`; an error shows
 Python's last traceback line. Run starts a fresh namespace and clears the
 transcript, while arrow up/down still recalls earlier inputs. The input line's
-**Visualize** button traces that input step by step against the same namespace,
+**Visualize input** button (`replVisualize`) traces that input step by step against the same namespace,
 as a dry run that leaves the namespace unchanged, with call boxes drawn from
 the file as it was at the last Run. Disable the REPL with
 `capabilities={{ repl: false }}`; the embed shows it in `eval` mode only, and
@@ -253,6 +261,32 @@ Use `mode: 'turtle'` for the graphics layout. The eval layout does not show or
 reserve space for turtle graphics. Use `mode: 'visual'` with a
 `glpython:visualize` message for an editor-free visualizer that cannot exit to
 the normal workspace.
+
+### Look
+
+Every colour, font and the corner radius in `style.css` come from CSS
+variables defined on `:root` with glpython's own look (the course design:
+white panels, light grey code areas, ink accent `#1F3A5F`, the system's UI
+and monospace fonts, no web fonts). A host can override any of them:
+
+| Variable | Role |
+|---|---|
+| `--glp-bg` | panel background |
+| `--glp-surface` | code in the visualizer, output, REPL |
+| `--glp-border` | decorative borders and separator lines |
+| `--glp-border-control` | borders of controls, call boxes in box mode |
+| `--glp-text`, `--glp-text-muted` | text and code; line numbers, step counter, secondary info, connector lines |
+| `--glp-accent`, `--glp-on-accent` | active mode, scrubber, focus, primary button; text on it |
+| `--glp-current`, `--glp-current-outline` | current subexpression and new value, current line; next step (dashed) |
+| `--glp-error`, `--glp-error-bg` | errors, failing tests, «Erhalten · Erwartet» |
+| `--glp-warning`, `--glp-warning-bg` | hints |
+| `--glp-success` | passed tests, runtime ready |
+| `--glp-syntax-keyword`, `-string`, `-number`, `-comment` | syntax colours (names, operators, brackets use `--glp-text`) |
+| `--glp-font-code`, `--glp-font-ui`, `--glp-radius` | fonts and corner radius |
+
+The embed is flat: no cards, its sections only separated by `--glp-border`
+lines, so the host draws the one frame around it. The Monaco editor still uses
+its built-in `vs-dark` theme.
 
 ## Development
 

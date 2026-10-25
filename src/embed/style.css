@@ -1,7 +1,7 @@
 :root {
-  color: #263a35;
-  background: #f4f1e9;
-  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  color: var(--glp-text);
+  background: var(--glp-bg);
+  font-family: var(--glp-font-ui);
 }
 
 * {
@@ -17,33 +17,88 @@ body,
 
 .embed-app {
   min-height: 160px;
-  padding: 12px;
 }
 
 .embed-app .glpython-workspace {
   min-height: 136px;
 }
 
+/* Flat: the host draws one frame around the block (the LiaScript macro's
+   .glpython-embed); inside it, the sections (visualizer bar, visualizer,
+   output with the REPL) are separated only by thin lines - no cards. */
+.embed-app .main-split,
+.embed-app .editor-column {
+  gap: 0;
+}
+
+.embed-app .editor-header,
+.embed-app .visualizer-bar,
+.embed-app .visualizer-warning,
+.embed-app .editor-panel,
+.embed-app .output-panel,
+.embed-app .graphics-panel,
+.embed-app .graphics-collapsed-toggle {
+  border: 0;
+  border-radius: 0;
+}
+
+.embed-app .editor-column > :not(:last-child) {
+  border-bottom: 1px solid var(--glp-border);
+}
+
+.embed-app .editor-header {
+  min-height: 0;
+  padding: 8px 12px;
+}
+
+.embed-app .visualizer-bar {
+  padding: 8px 12px;
+}
+
+.embed-app .graphics-panel {
+  border-left: 1px solid var(--glp-border);
+}
+
 .embed-configuration-error {
-  margin: 16px;
+  margin: 12px;
   padding: 12px;
-  color: #8a3328;
-  background: #fff4f1;
-  border: 1px solid #e2b9b1;
-  border-radius: 6px;
+  color: var(--glp-error);
+  background: var(--glp-error-bg);
+  border-radius: var(--glp-radius);
 }
 
 @media (max-width: 760px) {
-  .embed-app {
-    padding: 8px;
+  .embed-app .graphics-panel {
+    border-left: 0;
+    border-top: 1px solid var(--glp-border);
   }
 }
 
-/* "?size=large": bigger code (20px, line height 1.6), and the visualizer at
-   least as tall as the macro asks for (60% of the course window). */
+/* The visualizer is as tall as its content, with a small minimum, so a short
+   program leaves no empty area ("large" below sets its own minimum). */
+.embed-app .editor-panel {
+  min-height: 140px;
+}
+
+/* "?size=large": bigger code (20px, line height 1.6), the bar's text 16px,
+   and the visualizer at least as tall as the macro asks for (60% of the
+   course window). */
 .embed-app--large .visualizer-view {
   font-size: 20px;
   line-height: 1.6;
+}
+
+.embed-app--large .visualizer-bar,
+.embed-app--large .visualizer-step-count,
+.embed-app--large .visualizer-mode button,
+.embed-app--large .visualizer-options-button,
+.embed-app--large .visualizer-options-item {
+  font-size: 16px;
+}
+
+.embed-app--large .visualizer-bar svg {
+  width: 20px;
+  height: 20px;
 }
 
 .embed-app--large .editor-panel {
