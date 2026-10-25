@@ -1,4 +1,5 @@
 import doctestRuntime from './runtime/doctests.py?raw'
+import hintsRuntime from './runtime/hints.py?raw'
 import turtleModule from './runtime/gturtle.py?raw'
 import inputPreamble from './runtime/input_bridge.py?raw'
 import sessionRuntime from './runtime/session.py?raw'
@@ -30,6 +31,7 @@ async function getPyodide() {
     importScripts('https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.js')
     pyodideReadyPromise = loadPyodide().then(async (pyodide) => {
       await pyodide.runPythonAsync(inputPreamble)
+      await pyodide.runPythonAsync(hintsRuntime)
       await pyodide.runPythonAsync(sessionRuntime)
       await pyodide.runPythonAsync(visualizerRuntime)
       await pyodide.runPythonAsync(doctestRuntime)
@@ -126,7 +128,11 @@ self.onmessage = async (event) => {
       const graphicsJson = callPython(pyodide, '_glpython_graphics_json')
       self.postMessage({ type: 'result', output: output.trim(), graphics: JSON.parse(String(graphicsJson)) })
     } catch (error) {
-      self.postMessage({ type: 'error', output: String(error) })
+      // Python's traceback as it is, plus the hint for the error the file
+      // raised (none if it never got to run).
+      let errorHint = null
+      try { errorHint = JSON.parse(String(callPython(await getPyodide(), '_glpython_last_error_hint'))) } catch {}
+      self.postMessage({ type: 'error', output: String(error), errorHint })
     }
     return
   }

@@ -1,4 +1,5 @@
 import type { CoreStrings } from './GlPythonWorkspace'
+import type { ErrorHint, ErrorHintContext } from './errorHints'
 
 export type UiLocale = 'en' | 'de'
 
@@ -54,6 +55,9 @@ export const coreStrings: Record<UiLocale, CoreStrings> = {
     visualizeExample: 'Visualize example',
     testsPrintHint: (source, output) => `Note: ${source} printed ${output}, but returned None.`,
     exampleGotExpected: (got, want) => `Got: ${got} \u00b7 Expected: ${want}`,
+    errorHint: englishErrorHint,
+    hintLabel: 'Hint:',
+    testsExamplesError: (message) => `The examples could not be read: ${message}`,
     closeFile: (path) => `Close ${path}`,
     output: 'Output',
     pyodideRuntime: 'Pyodide runtime',
@@ -118,6 +122,9 @@ export const coreStrings: Record<UiLocale, CoreStrings> = {
     visualizeExample: 'Beispiel visualisieren',
     testsPrintHint: (source, output) => `Hinweis: ${source} hat ${output} ausgegeben, aber None zurückgegeben.`,
     exampleGotExpected: (got, want) => `Erhalten: ${got} \u00b7 Erwartet: ${want}`,
+    errorHint: germanErrorHint,
+    hintLabel: 'Hinweis:',
+    testsExamplesError: (message) => `Die Beispiele konnten nicht gelesen werden: ${message}`,
     closeFile: (path) => `${path} schliessen`,
     output: 'Ausgabe',
     pyodideRuntime: 'Pyodide-Laufzeit',
@@ -136,6 +143,69 @@ export const coreStrings: Record<UiLocale, CoreStrings> = {
     inputCancel: 'Abbrechen',
     inputSubmit: 'Bestätigen',
   },
+}
+
+// "`a`", "`a` and `b`", "`a`, `b` and `c`" - names as code, joined with the
+// language's "and".
+function codeList(names: string[], and: string): string {
+  const codes = names.map((name) => `\`${name}\``)
+  return codes.length < 2 ? codes.join('') : `${codes.slice(0, -1).join(', ')} ${and} ${codes[codes.length - 1]}`
+}
+
+// The hints below errors (see src/runtime/hints.py). German in Swiss spelling,
+// neutral: statements and questions, never "du" or "Sie".
+function germanErrorHint(hint: ErrorHint, context: ErrorHintContext): string | null {
+  switch (hint.kind) {
+    case 'name-not-defined':
+      return `\`${hint.name}\` ist hier nicht definiert. Tippfehler oder Gross-/Kleinschreibung? Fehlt die Definition?${context === 'repl' ? ' Wurde die Datei schon ausgeführt?' : ''}`
+    case 'missing-arguments':
+      return hint.names.length === 1
+        ? `\`${hint.function}\` erwartet mehr Argumente: Es fehlt ein Wert für ${codeList(hint.names, 'und')}.`
+        : `\`${hint.function}\` erwartet mehr Argumente: Es fehlen Werte für ${codeList(hint.names, 'und')}.`
+    case 'too-many-arguments':
+      return `\`${hint.function}\` erwartet ${hint.expected === 0 ? 'keine Argumente' : hint.expected === 1 ? '1 Argument' : `${hint.expected} Argumente`}, erhalten hat es ${hint.given}.`
+    case 'none-operand':
+      return 'Ein Wert ist `None`. Gibt eine Funktion ihr Ergebnis mit `print` aus statt mit `return`?'
+    case 'text-plus-number':
+      return 'Text und Zahl lassen sich nicht mit `+` verbinden.'
+    case 'zero-division':
+      return 'Ein Nenner ist 0 geworden. Wie lautet der Nenner, Schritt für Schritt ausgewertet?'
+    case 'recursion':
+      return 'Die Funktion ruft sich immer wieder selbst auf. Gibt es einen Fall, in dem sie ohne weiteren Aufruf ein Ergebnis zurückgibt?'
+    case 'list-index':
+      return 'Die Liste hat weniger Elemente, als der Index verlangt. Die Zählung beginnt bei 0.'
+    case 'doctest-blank':
+      return `Nach \`>>>\` fehlt ein Leerzeichen (Zeile ${hint.line} im Docstring von \`${hint.function}\`).`
+    default:
+      return null
+  }
+}
+
+function englishErrorHint(hint: ErrorHint, context: ErrorHintContext): string | null {
+  switch (hint.kind) {
+    case 'name-not-defined':
+      return `\`${hint.name}\` isn't defined here. A typo or upper/lower case? Is the definition missing?${context === 'repl' ? ' Has the file been run yet?' : ''}`
+    case 'missing-arguments':
+      return hint.names.length === 1
+        ? `\`${hint.function}\` expects more arguments: a value for ${codeList(hint.names, 'and')} is missing.`
+        : `\`${hint.function}\` expects more arguments: values for ${codeList(hint.names, 'and')} are missing.`
+    case 'too-many-arguments':
+      return `\`${hint.function}\` expects ${hint.expected === 0 ? 'no arguments' : hint.expected === 1 ? '1 argument' : `${hint.expected} arguments`} but got ${hint.given}.`
+    case 'none-operand':
+      return 'A value is `None`. Does a function output its result with `print` instead of `return`?'
+    case 'text-plus-number':
+      return "Text and a number can't be joined with `+`."
+    case 'zero-division':
+      return 'A denominator has become 0. What is the denominator, evaluated step by step?'
+    case 'recursion':
+      return 'The function keeps calling itself. Is there a case in which it returns a result without calling itself again?'
+    case 'list-index':
+      return 'The list has fewer elements than the index asks for. Counting starts at 0.'
+    case 'doctest-blank':
+      return `A space is missing after \`>>>\` (line ${hint.line} of the docstring of \`${hint.function}\`).`
+    default:
+      return null
+  }
 }
 
 // The first candidate language that is supported, by its primary subtag

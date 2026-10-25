@@ -368,6 +368,12 @@
 .test-summary--passed { color: var(--glp-success); }
 .test-summary--failed { color: var(--glp-error); }
 .test-hint { margin: 0 0 8px; padding: 6px 10px; color: var(--glp-warning); background: var(--glp-warning-bg); border-radius: var(--glp-radius); font: 13px/1.5 var(--glp-font-ui); }
+/* A hint below an error (see ErrorHintNote): Python's message stays above it
+   as it is. Also inside the output's <pre>, so a block in the UI font. */
+.error-hint { display: block; margin: 6px 0 8px; padding: 6px 10px; color: var(--glp-warning); background: var(--glp-warning-bg); border-radius: var(--glp-radius); font: 13px/1.5 var(--glp-font-ui); white-space: normal; }
+.error-hint code { font: 600 1em var(--glp-font-code); }
+.visual-error-hint { padding: 0 8px 4px; }
+.visual-error-hint .error-hint { margin: 0; }
 .test-failure { margin: 0 0 10px; padding: 8px 10px; background: var(--glp-error-bg); border-left: 3px solid var(--glp-error); border-radius: var(--glp-radius); }
 .test-failure .secondary-button { margin-top: 8px; padding: 4px 10px; font-size: 13px; }
 

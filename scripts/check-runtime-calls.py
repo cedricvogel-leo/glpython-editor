@@ -16,7 +16,7 @@ RUNTIME = os.path.join(ROOT, "src", "runtime")
 sys.path.insert(0, RUNTIME)  # for "import gturtle"
 
 namespace = {"__name__": "glpython_runtime"}
-for name in ("session.py", "visualizer.py"):
+for name in ("hints.py", "session.py", "visualizer.py"):
     with open(os.path.join(RUNTIME, name), encoding="utf-8") as handle:
         exec(compile(handle.read(), name, "exec"), namespace)
 

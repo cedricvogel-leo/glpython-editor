@@ -25,7 +25,8 @@
     "lint": "oxlint",
     "preview:embed": "vite preview --config vite.embed.config.ts",
     "test:protocol": "npm run build && node scripts/check-embed-protocol.mjs",
-    "test:runtime": "python3 -B scripts/check-runtime-columns.py && python3 -B scripts/check-runtime-values.py && python3 -B scripts/check-runtime-doctests.py && python3 -B scripts/check-runtime-calls.py",
+    "test:hints": "node scripts/check-error-hints.mjs",
+    "test:runtime": "python3 -B scripts/check-runtime-columns.py && python3 -B scripts/check-runtime-values.py && python3 -B scripts/check-runtime-doctests.py && python3 -B scripts/check-runtime-calls.py && python3 -B scripts/check-runtime-hints.py",
     "prepare": "npm run build"
   },
   "peerDependencies": {

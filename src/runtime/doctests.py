@@ -25,13 +25,16 @@ class _GlpythonDocTestRunner(doctest.DocTestRunner):
     self._displayed.append(value)
     self._original_display(value)
 
-  def _example_record(self, test, example, text, got=None):
+  def _example_record(self, test, example, text, got=None, error=None):
     record = {
       "name": test.name,
       "line": (test.lineno or 0) + example.lineno + 1,
       "source": example.source.rstrip("\n"),
       "text": text,
     }
+    # An example that raised: the hint for its error (hints.py).
+    if error is not None:
+      record["errorHint"] = _glpython_error_hint(error)
     # For an example whose output didn't match: the two texts doctest
     # compared, so the visualizer can show them next to the final value.
     if got is not None:
@@ -51,7 +54,7 @@ class _GlpythonDocTestRunner(doctest.DocTestRunner):
 
   def report_unexpected_exception(self, out, test, example, exc_info):
     text = self._failure_header(test, example) + "Exception raised:\n" + doctest._indent(doctest._exception_traceback(exc_info))
-    self.failed_examples.append(self._example_record(test, example, text))
+    self.failed_examples.append(self._example_record(test, example, text, error=exc_info[1]))
     self._displayed = []
 
 # Runs the doctests of one file the way "python -m doctest" does: the file is
@@ -71,10 +74,15 @@ def _glpython_run_doctests(main_path):
       source = handle.read()
     exec(compile(source, main_path, "exec"), module.__dict__)
   except BaseException as error:
-    return json.dumps({"error": "".join(traceback.format_exception_only(type(error), error)).strip()})
+    return json.dumps({"error": "".join(traceback.format_exception_only(type(error), error)).strip(), "errorHint": _glpython_error_hint(error)})
 
   runner = _GlpythonDocTestRunner()
-  tests = sorted(doctest.DocTestFinder().find(module, module_name), key=lambda test: test.lineno or 0)
+  # doctest's parser rejects malformed examples (e.g. no blank after ">>>")
+  # for the whole file, before any example runs.
+  try:
+    tests = sorted(doctest.DocTestFinder().find(module, module_name), key=lambda test: test.lineno or 0)
+  except ValueError as error:
+    return json.dumps({"examplesError": f"ValueError: {error}", "errorHint": _glpython_error_hint(error)})
   # DocTestRunner.run resets sys.displayhook to sys.__displayhook__ for every
   # test, so the runner's hook goes there for the duration.
   original_displayhook = sys.__displayhook__

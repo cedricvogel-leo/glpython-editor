@@ -1489,6 +1489,7 @@ def _glpython_trace_program(main_path, sources, fill_scope):
 
   error_text = None
   error_message = None
+  error_hint = None
   truncated = False
   try:
     module_vars = {"__name__": "__main__", "__file__": main_path}
@@ -1507,6 +1508,7 @@ def _glpython_trace_program(main_path, sources, fill_scope):
       pass
     except BaseException as error:
       error_message = _glpython_error_message(error)
+      error_hint = _glpython_error_hint(error)
       site = error.__dict__.get("_glpython_site")
       if site is not None:
         _glpython_record_error(site, error_message)
@@ -1527,5 +1529,6 @@ def _glpython_trace_program(main_path, sources, fill_scope):
     "graphics": gturtle.commands,
     "error": error_text,
     "errorMessage": error_message,
+    "errorHint": error_hint,
     "truncated": truncated,
   })

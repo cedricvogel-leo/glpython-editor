@@ -158,6 +158,22 @@ glpython hint that it probably should `return` instead. Texts: `runTests`,
 Call boxes in the visualizer show a function without its comments and
 docstring, which don't change what runs; the file itself is shown as written.
 
+### Error hints
+
+Below an error, glpython adds one short hint for the unit's common mistakes:
+an undefined name, missing or too many arguments, a `None` operand (a
+function that prints instead of returning), text plus a number, a division
+by zero, endless recursion, a list index out of range, and a doctest example
+without a blank after `>>>`. Python's message and traceback stay exactly as
+they are, and a failing test still fails. A hint is matched on the
+exception's type and message (`src/runtime/hints.py`); anything else gets no
+hint. It shows in the Run output, the REPL, the Tests report and below the
+visualizer's error marking, worded by `errorHint` and labelled by
+`hintLabel` («Hinweis:» / "Hint:"); a host without `errorHint` shows none.
+
+In the visualizer, a call with the wrong arguments fails as in Python, with
+Python's own `TypeError`.
+
 ### REPL
 
 Below the output panel, a `>>>` input line runs Python in the namespace of the
