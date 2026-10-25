@@ -211,6 +211,29 @@ it was. An input that doesn't compile has no button. Disable the REPL with
 `capabilities={{ repl: false }}`; the embed shows it in `eval` mode only, and
 resetting the embed discards the namespace.
 
+### Stacked layout (the IDE)
+
+Without `compact`, the workspace is stacked: the editor (or, while
+visualizing, the visualizer) in full width on top, a divider, and the console
+in full width below. The divider can be dragged (mouse, pen or finger) or
+moved with the arrow keys, Page Up/Down, Home and End (`consoleSize` names
+it); the console's share of the height (a third at first) is remembered in
+the browser. The file tabs and, while visualizing, the visualizer's bar take
+the same strip above the editor, so nothing below moves when switching. The
+graphics show beside the editor only while the program draws (for a
+visualization: if it draws at all); their ✕ hides them until the next drawing.
+An empty editor shows `editorPlaceholder` («Code hier eingeben»).
+
+The buttons come in the embed's order and labels - **▶ Run · Tests ·
+Visualize · Reset** (`runProject`, `runTests`, `visualize`, `resetOutput`) -
+and stay while visualizing (they leave the visualizer first). **Reset**
+restarts Python and clears the console, the visualization and the drawing, as
+the embed's Reset does. The run button keeps its width when it becomes
+**Stop**. A host can put the buttons into its own bar with
+`actionsContainer={element}` (the IDE's top bar); without it they sit above
+the editor. `capabilities={{ closeFileTabs: false }}` drops the ✕ on the file
+tabs, for a host that shows every file of the project as a tab.
+
 ### Compact embeds
 
 `GlPythonWorkspace` accepts optional `compact` and `capabilities` props. The
