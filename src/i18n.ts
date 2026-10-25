@@ -118,7 +118,7 @@ export const coreStrings: Record<UiLocale, CoreStrings> = {
     visualizeExample: 'Beispiel visualisieren',
     testsPrintHint: (source, output) => `Hinweis: ${source} hat ${output} ausgegeben, aber None zurückgegeben.`,
     exampleGotExpected: (got, want) => `Erhalten: ${got} \u00b7 Erwartet: ${want}`,
-    closeFile: (path) => `${path} schließen`,
+    closeFile: (path) => `${path} schliessen`,
     output: 'Ausgabe',
     pyodideRuntime: 'Pyodide-Laufzeit',
     runsFile: (mainFile) => `Führt ${mainFile} aus`,
