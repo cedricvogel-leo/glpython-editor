@@ -15,6 +15,8 @@ import type { ErrorHint } from './errorHints'
 // traceback line as its label/valueText.
 export type TraceStepKind = 'eval' | 'exec' | 'branch' | 'loop-iter' | 'call-enter' | 'call-pending' | 'error'
 
+export type ParamAnnotation = [number, string, string, [number, number, number, number]?]
+
 export type TraceStep = {
   step: number
   path: string
@@ -61,8 +63,10 @@ export type TraceStep = {
   // [param name node id, "=value" text, bound parameter name] per plain
   // positional parameter. The name rides along so the UI can match an
   // entry here back to the matching parameter name in argSources below
-  // (the two arrays aren't necessarily parallel/same-length).
-  paramAnnotations: Array<[number, string, string]>
+  // (the two arrays aren't necessarily parallel/same-length). A parameter
+  // with a default adds the span of its "=0" ([line, col, end line, end
+  // col]), which the header leaves out, as it shows the call's own value.
+  paramAnnotations: Array<ParamAnnotation>
   // Only present on "call-enter" steps: the name of each plain
   // positionally-passed parameter this call binds - lets the UI draw an
   // arrow from that parameter's bound value (shown one step early right in
@@ -359,7 +363,7 @@ export type OpenFrame = {
   // call site (e.g. calling into an imported module).
   funcDefPath: string
   funcDefNodeId: number
-  paramAnnotations: Array<[number, string, string]>
+  paramAnnotations: Array<ParamAnnotation>
   shortForm: ShortForm | null
 }
 

@@ -483,7 +483,8 @@ function Frame(props: FrameProps) {
   const paramNodeIds = new Set(openFrame?.paramAnnotations.map(([nodeId]) => nodeId))
 
   // A call box shows the function without its comments and docstring.
-  const removals = scope.kind === 'call' && clipRange ? hiddenRangesWithin(hiddenRanges[path], lineOffsets, source.length, clipRange) : []
+  // Nor a parameter's default: its header shows the value of this call.
+  const removals = scope.kind === 'call' && clipRange ? hiddenRangesWithin([...hiddenRanges[path] ?? [], ...(openFrame?.paramAnnotations ?? []).flatMap(([, , , range]) => range ? [range] : [])], lineOffsets, source.length, clipRange) : []
   const rendered = renderFrameSource(source, lineOffsets, nodeIndex, clipRange, substitutions, annotations, removals)
   if (!rendered) return null
   // Must match how renderFrameSource placed the substitutions.
@@ -692,7 +693,7 @@ function Frame(props: FrameProps) {
       {localEntries.length > 0 && <>
         <div className="frame-divider" />
         <div className="frame-vars">
-          {localEntries.map(([name, value]) => <div className="locals-row" key={name} data-name={name}><span className="locals-name">{name}</span><span className={`locals-value${value === null ? ' locals-value-pending' : ''}`} key={value ?? 'pending'}>{value === null ? '\u2026' : valueKindLabels[value] ?? value}</span></div>)}
+          {localEntries.map(([name, value]) => <div className="locals-row" key={name} data-name={name}><span className="locals-name">{name}</span><span className={`locals-value${value === null ? ' locals-value-pending' : Object.hasOwn(valueKindLabels, value) ? ' locals-value-kind' : ''}`} key={value ?? 'pending'}>{value === null ? '\u2026' : valueKindLabels[value] ?? value}</span></div>)}
         </div>
       </>}
     </div>
