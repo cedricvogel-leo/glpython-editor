@@ -687,6 +687,7 @@ class _GlpythonFunction:
         parent_frame_id = _glpython_frame_stack[-1]
         _glpython_frame_stack.append(frame_id)
         param_annotations = []
+        default_nodes = dict(zip(positional_names[len(positional_names) - len(defaults):], defaults)) if defaults else {}
         for arg_node in arguments.args:
           if arg_node.arg in call_vars:
             arg_id = getattr(arg_node, "_glpython_id", None)
@@ -696,7 +697,17 @@ class _GlpythonFunction:
               # to the matching entry in arg_sources below by name (the two
               # lists aren't necessarily parallel/same-length, e.g. a
               # defaulted-but-omitted param has no arg_sources entry).
-              param_annotations.append([arg_id, "=" + _glpython_safe_repr(call_vars[arg_node.arg]), arg_node.arg])
+              annotation = [arg_id, "=" + _glpython_safe_repr(call_vars[arg_node.arg]), arg_node.arg]
+              # A parameter with a default also carries the span of its
+              # " = 0" after the name ([line, col, end line, end col],
+              # annotation included in the name's node), which the box's
+              # header leaves out: it shows "tiefe=3", not "tiefe=3=0".
+              default_node = default_nodes.get(arg_node.arg)
+              if default_node is not None:
+                _, line, _, col = _glpython_pos(arg_node)
+                _, end_line, _, end_col = _glpython_pos(default_node)
+                annotation.append([line, col, end_line, end_col])
+              param_annotations.append(annotation)
         # The names of the plain positionally-passed parameters this call
         # actually supplies a value for - lets the UI know which parameters
         # to show as one-step-early placeholder rows (and which to draw a

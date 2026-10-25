@@ -192,10 +192,13 @@
 .visualizer-warning { display: flex; align-items: center; gap: 8px; padding: 9px 12px; color: var(--glp-warning); background: var(--glp-warning-bg); border-radius: var(--glp-radius); font-size: 13px; }
 .visualizer-warning svg { flex-shrink: 0; color: var(--glp-warning); }
 
-.locals-row { display: flex; align-items: baseline; gap: 10px; padding: 6px 12px; font: inherit; border-bottom: 1px solid var(--glp-border); }
+.locals-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; padding: 6px 12px; font: inherit; border-bottom: 1px solid var(--glp-border); }
 .locals-row:last-child { border-bottom: 0; }
 .locals-name { color: var(--glp-text); font-weight: 600; }
 .locals-value { color: var(--glp-text); overflow-wrap: anywhere; }
+/* «Funktion» etc. aren't values: they move below a long name rather than
+   break inside the word. */
+.locals-value-kind { white-space: nowrap; }
 .locals-value-pending { color: var(--glp-text-muted); font-style: italic; }
 
 /* The current line, and more faintly the lines already executed; the
