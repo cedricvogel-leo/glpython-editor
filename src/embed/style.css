@@ -80,13 +80,12 @@ body,
   min-height: 140px;
 }
 
-/* The Tests report and the output are as tall as their content too (the
-   host's iframe follows them), instead of scrolling inside a fixed height
-   as in the IDE - so a hint below a traceback is never scrolled away. */
-.embed-app .test-report,
-.embed-app .output-panel pre {
-  max-height: none;
-  overflow: visible;
+/* The console is as tall as its content too (the host's iframe follows it),
+   so a hint below a traceback is never scrolled away - up to 480px: a program
+   printing in a loop scrolls there, following its newest line, rather than
+   stretching the course page. */
+.embed-app .console {
+  max-height: 480px;
 }
 
 /* "?size=large": bigger code (20px, line height 1.6), the bar's text 16px,

@@ -106,7 +106,13 @@ export function App() {
       }
 
       parentVersionRef.current = message.version
+      if (message.type === 'glpython:stop') {
+        setCommand({ id: ++commandIdRef.current, type: 'stop' })
+        return
+      }
       if (message.type === 'glpython:reset') {
+        // The new workspace starts idle; the parent's stop button must go.
+        if (parentVersionRef.current >= 4) sendToParent({ type: 'glpython:busy', busy: false })
         setCommand(null)
         setWorkspaceGeneration((generation) => generation + 1)
         return
@@ -133,6 +139,7 @@ export function App() {
         input: typeof SharedArrayBuffer !== 'undefined',
         files: true,
         tests: true,
+        stop: true,
       },
     })
     return () => window.removeEventListener('message', onMessage)
@@ -151,6 +158,12 @@ export function App() {
     return () => observer.disconnect()
   }, [configuredParentOrigin, sendToParent])
 
+  // Version 4: the parent's run button becomes a stop button while Python is
+  // busy. Older parents don't know the message.
+  const reportBusy = useCallback((busy: boolean) => {
+    if (parentVersionRef.current >= 4) sendToParent({ type: 'glpython:busy', busy })
+  }, [sendToParent])
+
   if (!configuredParentOrigin && window.parent !== window) {
     return <p className="embed-configuration-error">This embed is missing a valid parentOrigin.</p>
   }
@@ -167,6 +180,7 @@ export function App() {
         project={project}
         command={command}
         visualizerMode={visualizerModeFromLocation()}
+        onBusyChange={reportBusy}
         activeFile={project.mainFile}
         openFiles={[project.mainFile]}
         onOpenFile={() => undefined}

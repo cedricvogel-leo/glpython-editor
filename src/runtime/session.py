@@ -9,6 +9,12 @@ import traceback
 # the next Run replaces it with a fresh one.
 _glpython_repl_namespace = {"__name__": "__main__", "__builtins__": builtins}
 
+# The project's files are mounted at "/" (and gturtle.py next to them), so a
+# REPL input can import them even before the first Run - e.g. right after a
+# stop restarted Python.
+if "/" not in sys.path:
+  sys.path.insert(0, "/")
+
 _GLPYTHON_REPL_PATH = "<repl>"
 _GLPYTHON_REPL_MAX_REPR = 10000
 

@@ -1,10 +1,13 @@
 // Version 2 adds programs of several files ("files" and "mainFile" on load,
 // run and visualize); version 3 adds "glpython:test", which runs the
-// doctests of the file to run. The embed still accepts every earlier version
+// doctests of the file to run; version 4 adds "glpython:stop", which stops
+// what Python is running (by restarting it), and "glpython:busy", with which
+// the embed tells the parent when Python is busy, so its run button can turn
+// into a stop button. The embed still accepts every earlier version
 // and answers every parent in the version that parent last used - starting
 // with 1 - so courses with an older macro keep working unchanged.
-export const GLPYTHON_EMBED_PROTOCOL_VERSION = 3
-export const GLPYTHON_SUPPORTED_PROTOCOL_VERSIONS = [1, 2, 3] as const
+export const GLPYTHON_EMBED_PROTOCOL_VERSION = 4
+export const GLPYTHON_SUPPORTED_PROTOCOL_VERSIONS = [1, 2, 3, 4] as const
 export type GlPythonProtocolVersion = typeof GLPYTHON_SUPPORTED_PROTOCOL_VERSIONS[number]
 export const GLPYTHON_MAX_SOURCE_LENGTH = 500_000
 export const GLPYTHON_MAX_FILES = 20
@@ -38,12 +41,19 @@ export type GlPythonResetMessage = {
   version: GlPythonProtocolVersion
 }
 
+// Version 4: stop what Python is running. The code stays; Python restarts.
+export type GlPythonStopMessage = {
+  type: 'glpython:stop'
+  version: GlPythonProtocolVersion
+}
+
 export type GlPythonParentMessage =
   | GlPythonLoadMessage
   | GlPythonRunMessage
   | GlPythonVisualizeMessage
   | GlPythonTestMessage
   | GlPythonResetMessage
+  | GlPythonStopMessage
 
 export type GlPythonReadyMessage = {
   type: 'glpython:ready'
@@ -54,7 +64,19 @@ export type GlPythonReadyMessage = {
     files?: boolean
     // Whether version 3 "glpython:test" is understood.
     tests?: boolean
+    // Whether version 4 "glpython:stop" is understood (and "glpython:busy"
+    // sent).
+    stop?: boolean
   }
+}
+
+// Version 4, sent to a parent that speaks it: Python started (busy: true) or
+// finished (false) something that runs for more than a moment - a program,
+// a REPL input, Tests or a visualization.
+export type GlPythonBusyMessage = {
+  type: 'glpython:busy'
+  version: GlPythonProtocolVersion
+  busy: boolean
 }
 
 export type GlPythonResizeMessage = {
@@ -73,6 +95,7 @@ export type GlPythonErrorMessage = {
 export type GlPythonChildMessage =
   | GlPythonReadyMessage
   | GlPythonResizeMessage
+  | GlPythonBusyMessage
   | GlPythonErrorMessage
 
 export function isEmbedMode(value: unknown): value is EmbedMode {
@@ -110,6 +133,7 @@ export function parseParentMessage(value: unknown): GlPythonParentMessage | null
   if (!GLPYTHON_SUPPORTED_PROTOCOL_VERSIONS.includes(message.version as GlPythonProtocolVersion)) return null
   const version = message.version as GlPythonProtocolVersion
   if (message.type === 'glpython:reset') return message as GlPythonResetMessage
+  if (message.type === 'glpython:stop') return version >= 4 ? message as GlPythonStopMessage : null
   if (
     (message.type !== 'glpython:load' && message.type !== 'glpython:run' && message.type !== 'glpython:visualize' && message.type !== 'glpython:test')
     || (message.type === 'glpython:test' && version < 3)

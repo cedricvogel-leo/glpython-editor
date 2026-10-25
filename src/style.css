@@ -135,7 +135,11 @@
 .runtime-badge--failed { color: var(--glp-error); background: var(--glp-error-bg); }
 .runtime-badge--failed .pulse { background: var(--glp-error); }
 .output-hint { color: var(--glp-text-muted); font-size: 13px; }
-.output-panel pre { min-height: 90px; margin: 0; padding: 12px; color: var(--glp-text); background: var(--glp-surface); white-space: pre-wrap; font: 15px/1.6 var(--glp-font-code); }
+/* The console: one transcript of <pre> parts (the program's output, each REPL
+   input) with Tests reports and notes in between, scrolling as a whole. */
+.console { min-height: 90px; max-height: 240px; overflow-y: auto; padding: 12px; color: var(--glp-text); background: var(--glp-surface); font: 15px/1.6 var(--glp-font-code); }
+.console pre { margin: 0; color: inherit; white-space: pre-wrap; font: inherit; }
+.console-note { margin: 6px 0 0; color: var(--glp-text-muted); font: italic 13px/1.5 var(--glp-font-ui); }
 
 .statusbar { min-height: 29px; justify-content: space-between; padding: 0 31px; color: var(--glp-text-muted); background: var(--glp-bg); border-top: 1px solid var(--glp-border); font-size: 13px; }
 .statusbar span { display: inline-flex; align-items: center; gap: 6px; }
@@ -307,7 +311,6 @@
 .frame-collapsed-calls-label { color: var(--glp-text-muted); font: italic 13px/1.5 var(--glp-font-code); white-space: nowrap; }
 .frame-collapsed-calls > .frame-box { margin-left: 0; }
 
-.output-panel pre { max-height: 240px; overflow-y: auto; }
 .repl-entry { display: block; margin-top: 6px; }
 .repl-entry > span { display: block; }
 .repl-entry > .repl-echo { display: flex; align-items: baseline; gap: 12px; }
@@ -371,7 +374,7 @@
 .frame-hint { padding: 2px 12px 4px; color: var(--glp-text-muted); font: italic 13px/1.5 var(--glp-font-ui); white-space: normal; }
 
 
-.test-report { max-height: 360px; overflow-y: auto; padding: 12px; font: 15px/1.6 var(--glp-font-code); color: var(--glp-text); background: var(--glp-surface); }
+.test-report { margin-top: 6px; }
 .test-report pre { min-height: 0; max-height: none; margin: 0; padding: 0; background: transparent; white-space: pre-wrap; font: inherit; }
 .test-output { margin-bottom: 8px !important; color: var(--glp-text-muted); }
 .test-summary { margin: 0 0 8px; font-weight: 700; }

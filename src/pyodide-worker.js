@@ -171,6 +171,30 @@ async function replayReplEntry(pyodide, entryId) {
   }
 }
 
+// What a program or REPL input prints, passed on while it runs, so a long or
+// endless program shows its output - and can be seen and stopped. At most 50
+// messages per 50 ms; beyond that the text waits for the next print, so a
+// printing loop doesn't flood the page. The final result brings the whole
+// output again. `id` is the REPL input's, undefined for a program.
+function outputStream(id) {
+  let pending = ''
+  let windowStart = 0
+  let sent = 0
+  return (text) => {
+    pending += text
+    const now = Date.now()
+    if (now - windowStart >= 50) {
+      windowStart = now
+      sent = 0
+    }
+    if (sent < 50) {
+      self.postMessage({ type: 'output', id, text: pending })
+      pending = ''
+      sent += 1
+    }
+  }
+}
+
 self.onmessage = async (event) => {
   if (event.data.type === 'init-input-channel') {
     inputControl = new Int32Array(event.data.buffer, 0, 2)
@@ -185,8 +209,9 @@ self.onmessage = async (event) => {
       await mountProjectFiles(pyodide, event.data.project.files)
       lastRunFiles = event.data.project.files
       lastRunMainFile = event.data.project.mainFile
-      pyodide.setStdout({ batched: (text) => { runOutput += `${text}\n` } })
-      pyodide.setStderr({ batched: (text) => { runOutput += `${text}\n` } })
+      const stream = outputStream(undefined)
+      pyodide.setStdout({ batched: (text) => { runOutput += `${text}\n`; stream(`${text}\n`) } })
+      pyodide.setStderr({ batched: (text) => { runOutput += `${text}\n`; stream(`${text}\n`) } })
       hasRun = true
       lastRunOutcome = null
       replLog = []
@@ -229,8 +254,12 @@ self.onmessage = async (event) => {
     let output = ''
     try {
       const pyodide = await getPyodide()
-      pyodide.setStdout({ batched: (text) => { output += `${text}\n` } })
-      pyodide.setStderr({ batched: (text) => { output += `${text}\n` } })
+      // Nothing may have been run yet in this worker (e.g. right after a
+      // stop), and the drawing below imports gturtle.
+      if (!pyodide.FS.analyzePath('/gturtle.py').exists) pyodide.FS.writeFile('/gturtle.py', turtleModule)
+      const stream = outputStream(event.data.id)
+      pyodide.setStdout({ batched: (text) => { output += `${text}\n`; stream(`${text}\n`) } })
+      pyodide.setStderr({ batched: (text) => { output += `${text}\n`; stream(`${text}\n`) } })
       const resultJson = String(callPython(pyodide, '_glpython_repl', event.data.source))
       replLog.push({ id: event.data.id, source: event.data.source, output, resultJson })
       const result = JSON.parse(resultJson)
