@@ -25,7 +25,7 @@ def _glpython_invalidate_modules(mounted_paths_json):
         del sys.modules[module_name]
 
 def _glpython_run_project(main_path):
-  global _glpython_repl_namespace
+  global _glpython_repl_namespace, _glpython_last_error
   if "/" not in sys.path:
     sys.path.insert(0, "/")
   # Executed in a plain dict (rather than runpy.run_path, which hands back
@@ -36,7 +36,14 @@ def _glpython_run_project(main_path):
   _glpython_repl_namespace = {"__name__": "__main__", "__file__": main_path, "__builtins__": builtins}
   with open(main_path, "r", encoding="utf-8") as handle:
     source = handle.read()
-  exec(compile(source, main_path, "exec"), _glpython_repl_namespace)
+  _glpython_last_error = None
+  try:
+    exec(compile(source, main_path, "exec"), _glpython_repl_namespace)
+  except BaseException as error:
+    # Raised on unchanged (the worker shows Python's traceback); kept for
+    # its hint (hints.py).
+    _glpython_last_error = error
+    raise
 
 def _glpython_graphics_json():
   import gturtle
@@ -62,4 +69,4 @@ def _glpython_repl(source):
     exec(compile(tree, _GLPYTHON_REPL_PATH, "exec"), _glpython_repl_namespace)
     return json.dumps({"hint": "definition" if defines else None})
   except BaseException as error:
-    return json.dumps({"error": _glpython_error_message(error)})
+    return json.dumps({"error": _glpython_error_message(error), "errorHint": _glpython_error_hint(error)})

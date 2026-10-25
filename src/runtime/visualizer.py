@@ -582,11 +582,38 @@ def _eval_starred(node, scope):
 # falling back to real Python - this is what lets steps inside student
 # functions show up in the trace with correct locals per call.
 # ---------------------------------------------------------------------------
+# A function with the same parameters as `node` (defaults and annotations
+# left out) and an empty body. Calling it with a call's arguments raises
+# exactly the TypeError Python would for a wrong number or name of arguments,
+# with Python's own message, before the call is traced.
+def _glpython_argument_stub(node, qualname):
+  arguments = ast.arguments(
+    posonlyargs=[ast.arg(arg=a.arg) for a in node.args.posonlyargs],
+    args=[ast.arg(arg=a.arg) for a in node.args.args],
+    vararg=node.args.vararg and ast.arg(arg=node.args.vararg.arg),
+    kwonlyargs=[ast.arg(arg=a.arg) for a in node.args.kwonlyargs],
+    kw_defaults=[None if default is None else ast.Constant(value=None) for default in node.args.kw_defaults],
+    kwarg=node.args.kwarg and ast.arg(arg=node.args.kwarg.arg),
+    defaults=[ast.Constant(value=None) for _ in node.args.defaults],
+  )
+  stub_def = ast.FunctionDef(name="_glpython_stub", args=arguments, body=[ast.Pass()], decorator_list=[], returns=None, type_params=[])
+  namespace = {}
+  exec(compile(ast.fix_missing_locations(ast.Module(body=[stub_def], type_ignores=[])), "<glpython>", "exec"), namespace)
+  stub = namespace["_glpython_stub"]
+  stub.__name__ = qualname.rsplit(".", 1)[-1]
+  stub.__qualname__ = qualname
+  return stub
+
 class _GlpythonFunction:
   def __init__(self, node, closure_scope, name=None):
     self.node = node
     self.closure_scope = closure_scope
     self.__name__ = name or node.name
+    # As Python names it in its messages: "outer.<locals>.inner" for a
+    # function defined inside another one.
+    outer = _glpython_current_func_stack[-1] if _glpython_current_func_stack else "<module>"
+    self.__qualname__ = self.__name__ if outer == "<module>" else f"{outer}.<locals>.{self.__name__}"
+    self._glpython_stub = None
     # The file this "def" itself lives in, so a call-enter step recorded at
     # the *call site* (possibly in a different file, e.g. calling into an
     # imported module) can still tell the UI where to find the function's
@@ -603,6 +630,13 @@ class _GlpythonFunction:
     if _glpython_call_depth > _GLPYTHON_MAX_CALL_DEPTH:
       _glpython_call_depth -= 1
       raise RecursionError("maximum interpreted recursion depth exceeded")
+    try:
+      if self._glpython_stub is None:
+        self._glpython_stub = _glpython_argument_stub(self.node, self.__qualname__)
+      self._glpython_stub(*args, **kwargs)
+    except TypeError:
+      _glpython_call_depth -= 1
+      raise
     frame_id = None
     return_info = None
     try:
@@ -1455,6 +1489,7 @@ def _glpython_trace_program(main_path, sources, fill_scope):
 
   error_text = None
   error_message = None
+  error_hint = None
   truncated = False
   try:
     module_vars = {"__name__": "__main__", "__file__": main_path}
@@ -1473,6 +1508,7 @@ def _glpython_trace_program(main_path, sources, fill_scope):
       pass
     except BaseException as error:
       error_message = _glpython_error_message(error)
+      error_hint = _glpython_error_hint(error)
       site = error.__dict__.get("_glpython_site")
       if site is not None:
         _glpython_record_error(site, error_message)
@@ -1493,5 +1529,6 @@ def _glpython_trace_program(main_path, sources, fill_scope):
     "graphics": gturtle.commands,
     "error": error_text,
     "errorMessage": error_message,
+    "errorHint": error_hint,
     "truncated": truncated,
   })

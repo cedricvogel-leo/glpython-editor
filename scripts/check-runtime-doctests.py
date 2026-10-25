@@ -16,8 +16,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RUNTIME = os.path.join(ROOT, "src", "runtime")
 
 namespace = {"__name__": "glpython_runtime"}
-with open(os.path.join(RUNTIME, "doctests.py"), encoding="utf-8") as handle:
-    exec(compile(handle.read(), "doctests.py", "exec"), namespace)
+for name in ("hints.py", "doctests.py"):
+    with open(os.path.join(RUNTIME, name), encoding="utf-8") as handle:
+        exec(compile(handle.read(), name, "exec"), namespace)
 run_doctests = namespace["_glpython_run_doctests"]
 
 failures = []

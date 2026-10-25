@@ -8,6 +8,8 @@
 // stable id embedded in the AST-as-JSON tree - so the UI can substitute that
 // node's original source with the step's computed value inline.
 
+import type { ErrorHint } from './errorHints'
+
 // 'error' is only ever the very last step: the node the uncaught exception
 // was raised at, in the frame it was raised in, with Python's own last
 // traceback line as its label/valueText.
@@ -137,6 +139,8 @@ export type TraceResult = {
   error: string | null
   // Just the traceback's last line, e.g. "ZeroDivisionError: division by zero".
   errorMessage?: string | null
+  // The hint for that error, if it is one of the unit's common mistakes.
+  errorHint?: ErrorHint | null
   truncated: boolean
   // Per file, what call boxes leave out: comments and docstrings, as
   // [line, col, end line, end col] (see _glpython_hidden_ranges).

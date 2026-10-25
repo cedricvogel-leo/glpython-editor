@@ -6,6 +6,7 @@ import { projectImportsGturtle, type Project } from './project'
 import { GraphicsWindow, type TurtleCommand } from './GraphicsWindow'
 import { buildAnnotationsUpTo, buildEvaluationChain, buildExecutedLinesUpTo, buildLocalsUpTo, buildSubstitutionsUpTo, collapseDeepCallChain, hasEvaluationChain, hiddenRangesWithin, removedLines, computeLineOffsets, computeOpenFramesUpTo, indexAstNodes, lineNumberAtOffset, locateNodeRenderedRange, nodeRange, renderFrameSource, substitutionModeSteps, type AstNode, type CollapsedCalls, type OpenFrame, type TraceResult, type TraceStep, type VisualizerMode } from './visualizer'
 import { tokenizePythonFragment } from './pyHighlight'
+import type { ErrorHint, ErrorHintContext } from './errorHints'
 
 type CoreStrings = {
   exitVisualizer: string
@@ -79,6 +80,14 @@ type CoreStrings = {
   // visualized: the output doctest got and the one the example expected,
   // e.g. "Got: 4.0 · Expected: 4".
   exampleGotExpected?: (got: string, want: string) => string
+  // A short hint below an error for one of the unit's common mistakes (see
+  // hints.py), its label («Hinweis:»), and the Tests report's message when
+  // doctest can't read the examples (e.g. no blank after ">>>"). Names in
+  // `backticks` are shown as code. Optional, like visualizerCollapsedCalls;
+  // without errorHint no hints show.
+  errorHint?: (hint: ErrorHint, context: ErrorHintContext) => string | null
+  hintLabel?: string
+  testsExamplesError?: (message: string) => string
   valueKindClass?: string
   valueKindModule?: string
   closeFile: (path: string) => string
@@ -142,9 +151,13 @@ type TestReport = {
   attempted?: number
   failed?: number
   // `want`/`got` only for an example whose output didn't match (not one that raised).
-  failures?: Array<{ name: string; line: number; source: string; text: string; want?: string; got?: string }>
+  failures?: Array<{ name: string; line: number; source: string; text: string; want?: string; got?: string; errorHint?: ErrorHint | null }>
   printHints?: Array<{ source: string; output: string }>
+  // The file didn't load, or doctest couldn't read its examples; with the
+  // hint for that error, if any.
   error?: string
+  examplesError?: string
+  errorHint?: ErrorHint | null
   output?: string
 }
 
@@ -210,7 +223,7 @@ function storedVisualizerMode(): VisualizerMode {
 type ReplEntry = {
   id: number
   source: string
-  result: { output: string; value?: string; isNone?: boolean; error?: string; hint?: 'definition' | null } | null
+  result: { output: string; value?: string; isNone?: boolean; error?: string; errorHint?: ErrorHint | null; hint?: 'definition' | null } | null
 }
 
 // One highlighted (or plain) run of text within a single rendered line of a
@@ -423,6 +436,8 @@ type FrameProps = {
   // Only the module frame: a note shown under one of its lines (the doctest
   // expectation next to a failing example's final value).
   finalNote?: { line: number; text: string } | null
+  // The hint shown below the error message (an ErrorHintNote), if any.
+  errorHint?: ReactNode
 }
 
 // Renders one frame of execution - either the outermost module/global scope
@@ -438,7 +453,7 @@ type FrameProps = {
 // call site - real DOM in normal flow, so surrounding text/lines reflow
 // automatically.
 function Frame(props: FrameProps) {
-  const { frameId, path, scope, openFrames, nodeIndexByFile, visualSources, trace, uptoStep, currentStep, nextStep, monaco, valueKindLabels, hiddenRanges, declareTarget, pendingCallLocals, errorStep, collapsedCalls, collapsedCallsLabel, substitutionMode, boxHint, insideBox, inlineMarkClass, activeHost, errorHost, finalNote } = props
+  const { frameId, path, scope, errorHint, openFrames, nodeIndexByFile, visualSources, trace, uptoStep, currentStep, nextStep, monaco, valueKindLabels, hiddenRanges, declareTarget, pendingCallLocals, errorStep, collapsedCalls, collapsedCallsLabel, substitutionMode, boxHint, insideBox, inlineMarkClass, activeHost, errorHost, finalNote } = props
   const nodeIndex = nodeIndexByFile.get(path)
   const source = visualSources[path]
   if (!nodeIndex || source === undefined) return null
@@ -554,7 +569,7 @@ function Frame(props: FrameProps) {
   }
 
   // Children of a box (or of an inline call inside one) are inside a box.
-  const childFrameProps = { openFrames, nodeIndexByFile, visualSources, trace, uptoStep, currentStep, nextStep, monaco, valueKindLabels, hiddenRanges, declareTarget, pendingCallLocals, errorStep, collapsedCalls, collapsedCallsLabel, substitutionMode, boxHint, activeHost, errorHost, insideBox: insideBox || scope.kind === 'call' }
+  const childFrameProps = { errorHint, openFrames, nodeIndexByFile, visualSources, trace, uptoStep, currentStep, nextStep, monaco, valueKindLabels, hiddenRanges, declareTarget, pendingCallLocals, errorStep, collapsedCalls, collapsedCallsLabel, substitutionMode, boxHint, activeHost, errorHost, insideBox: insideBox || scope.kind === 'call' }
   const markedRanges = errorRanges.length > 0 ? errorRanges : nextStepRanges
   const inlineMarkFor = (frame: OpenFrame) => {
     const range = childRanges.find((child) => child.frame.frameId === frame.frameId)
@@ -656,6 +671,7 @@ function Frame(props: FrameProps) {
                   <div className={`frame-line${lineStateClass}`}>{content}</div>
                 </div>
                 {errorMessage && <div className="frame-line-row"><span className="frame-gutter-num" />{errorMessage}</div>}
+                {errorMessage && errorHint && <div className="frame-line-row"><span className="frame-gutter-num" /><div className="visual-error-hint">{errorHint}</div></div>}
                 {finalNote && finalNote.line === absoluteLine && <div className="frame-line-row"><span className="frame-gutter-num" /><div className="visual-expectation-message" role="status">{finalNote.text}</div></div>}
               </Fragment>
             )
@@ -664,6 +680,7 @@ function Frame(props: FrameProps) {
             <Fragment key={index}>
               <div className={`frame-line${lineStateClass}`}>{content}</div>
               {errorMessage}
+              {errorMessage && errorHint && <div className="visual-error-hint">{errorHint}</div>}
             </Fragment>
           )
         })}
@@ -748,7 +765,8 @@ function OptionsMenu({ label, children }: { label: string; children: ReactNode }
 }
 
 function TestReportView({ report, t, onVisualizeExample }: { report: TestReport; t: CoreStrings; onVisualizeExample: ((failure: NonNullable<TestReport['failures']>[number]) => void) | null }) {
-  if (report.error) return <div className="test-report"><p className="output-error">{t.testsLoadError?.(report.error) ?? `The file could not be loaded: ${report.error}`}</p></div>
+  if (report.error) return <div className="test-report"><p className="output-error">{t.testsLoadError?.(report.error) ?? `The file could not be loaded: ${report.error}`}</p><ErrorHintNote hint={report.errorHint} t={t} /></div>
+  if (report.examplesError) return <div className="test-report"><p className="output-error">{t.testsExamplesError?.(report.examplesError) ?? `The examples could not be read: ${report.examplesError}`}</p><ErrorHintNote hint={report.errorHint} t={t} /></div>
   const attempted = report.attempted ?? 0
   const failed = report.failed ?? 0
   return (
@@ -761,6 +779,7 @@ function TestReportView({ report, t, onVisualizeExample }: { report: TestReport;
       {(report.failures ?? []).map((failure, index) => (
         <div className="test-failure" key={index}>
           <pre>{failure.text.replace(/^\*+\n/, '').replace(/^\n+|\n+$/g, '')}</pre>
+          <ErrorHintNote hint={failure.errorHint} t={t} />
           {onVisualizeExample && <button type="button" className="secondary-button" onClick={() => onVisualizeExample(failure)}><Workflow size={13} /> {t.visualizeExample ?? 'Visualize example'}</button>}
         </div>
       ))}
@@ -768,7 +787,15 @@ function TestReportView({ report, t, onVisualizeExample }: { report: TestReport;
   )
 }
 
-function ReplTranscriptEntry({ entry, definitionHint }: { entry: ReplEntry; definitionHint: string }) {
+// The hint below an error (hints.py), worded by CoreStrings.errorHint, with
+// the names in it as code. Python's message above it stays as it is.
+function ErrorHintNote({ hint, t, context = 'other' }: { hint: ErrorHint | null | undefined; t: CoreStrings; context?: ErrorHintContext }) {
+  const text = hint ? t.errorHint?.(hint, context) : null
+  if (!text) return null
+  return <span className="error-hint" role="note"><strong>{t.hintLabel ?? 'Hint:'}</strong> {text.split('`').map((part, index) => index % 2 === 1 ? <code key={index}>{part}</code> : part)}</span>
+}
+
+function ReplTranscriptEntry({ entry, definitionHint, t }: { entry: ReplEntry; definitionHint: string; t: CoreStrings }) {
   const result = entry.result
   const printed = result?.output.replace(/\n$/, '')
   return (
@@ -777,6 +804,7 @@ function ReplTranscriptEntry({ entry, definitionHint }: { entry: ReplEntry; defi
       {printed && <span>{printed}</span>}
       {result?.value !== undefined && <span className={result.isNone ? 'repl-value repl-value--none' : 'repl-value'}>{result.value}</span>}
       {result?.error && <span className="output-error">{result.error}</span>}
+      <ErrorHintNote hint={result?.errorHint} t={t} context="repl" />
       {result?.hint === 'definition' && <span className="repl-hint">{definitionHint}</span>}
     </span>
   )
@@ -800,6 +828,9 @@ function GlPythonWorkspace(props: GlPythonWorkspaceProps) {
   } = props
   const workspaceCapabilities = { ...defaultWorkspaceCapabilities, ...capabilities }
   const [output, setOutput] = useState(() => t.readyOutput)
+  // The hint for the error the last Run ended with (hints.py), shown below
+  // Python's traceback.
+  const [outputErrorHint, setOutputErrorHint] = useState<ErrorHint | null>(null)
   // Whether Pyodide is still loading, ready, or failed to load: the runtime
   // badge only shows while it isn't ready.
   const [runtimeState, setRuntimeState] = useState<'loading' | 'ready' | 'failed'>('loading')
@@ -875,15 +906,15 @@ function GlPythonWorkspace(props: GlPythonWorkspaceProps) {
       const currentTranslation = stringsRef.current
       if (event.data.type === 'ready') { setOutput(currentTranslation.readyOutput); setRuntimeState('ready') }
       if (event.data.type === 'error') setRuntimeState((state) => state === 'loading' ? 'failed' : state)
-      if (event.data.type === 'result' || event.data.type === 'error') { setOutput(event.data.output || currentTranslation.noOutput); setGraphics(event.data.graphics ?? []); setIsRunning(false) }
+      if (event.data.type === 'result' || event.data.type === 'error') { setOutput(event.data.output || currentTranslation.noOutput); setOutputErrorHint(event.data.type === 'error' ? event.data.errorHint ?? null : null); setGraphics(event.data.graphics ?? []); setIsRunning(false) }
       if (event.data.type === 'input_request') { setInputValue(''); setInputRequest(event.data.prompt ?? '') }
       if (event.data.type === 'test-result') {
         setTestReport(event.data as TestReport)
         setIsTesting(false)
       }
       if (event.data.type === 'repl-result') {
-        const { id = -1, output = '', value, isNone, error, hint, graphics } = event.data
-        const result = { output, value, isNone, error: error ?? undefined, hint }
+        const { id = -1, output = '', value, isNone, error, errorHint, hint, graphics } = event.data
+        const result = { output, value, isNone, error: error ?? undefined, errorHint, hint }
         // A visualized input that doesn't parse comes back here too, and has
         // no transcript entry yet.
         setReplEntries((entries) => entries.some((entry) => entry.id === id)
@@ -937,7 +968,7 @@ function GlPythonWorkspace(props: GlPythonWorkspaceProps) {
   const runCode = () => {
     if (!workerRef.current) return
     if (workspaceCapabilities.graphics && projectImportsGturtle(project)) onGraphicsOpenChange(true)
-    setIsRunning(true); setOutput(t.runningOutput(project.mainFile)); setReplEntries([]); setTestReport(null)
+    setIsRunning(true); setOutput(t.runningOutput(project.mainFile)); setOutputErrorHint(null); setReplEntries([]); setTestReport(null)
     workerRef.current.postMessage({
       type: 'run',
       project: {
@@ -1046,6 +1077,7 @@ function GlPythonWorkspace(props: GlPythonWorkspaceProps) {
       exitVisualizer()
       setReplEntries([])
       setOutput(t.readyOutput)
+      setOutputErrorHint(null)
       setGraphics([])
     }
     // Commands are immutable events. Their id, rather than render-time callback
@@ -1760,7 +1792,7 @@ function GlPythonWorkspace(props: GlPythonWorkspaceProps) {
 
   return (
     <div className={workspaceClassName}>
-              <div className="main-split"><div className="editor-column"><div className="editor-header"><div className="breadcrumbs"><span>{project.name}</span><span>/</span><strong>{selectedFile.path}</strong></div><div className="editor-actions">{isVisualizing ? null : workspaceCapabilities.actions ? <><button className="secondary-button" onClick={() => { setOutput(t.readyOutput); setReplEntries([]); setTestReport(null) }}><RotateCcw size={15} /> {t.resetOutput}</button><button className="secondary-button" onClick={runVisualize} disabled={isRunning || isVisualizerLoading}><Workflow size={15} /> {isVisualizerLoading ? t.visualizing : t.visualize}</button>{workspaceCapabilities.tests && <button className="secondary-button" onClick={runTests} disabled={isTesting}><FlaskConical size={15} /> {isTesting ? (t.testsRunning ?? 'Running tests...') : (t.runTests ?? 'Tests')}</button>}<button className="run-button" onClick={runCode} disabled={isRunning}><Play size={15} fill="currentColor" /> {isRunning ? t.running : t.runProject}</button></> : null}</div></div>{isVisualizing && <div className="visualizer-bar">{visualTraceSteps.length > 0 ? <><div className="visualizer-controls"><button type="button" className="icon-button small" aria-label={t.visualizerFirstStep ?? t.visualizerRestart} title={t.visualizerFirstStep ?? t.visualizerRestart} onClick={visualFirstStep} disabled={clampedStepIndex === -1}><SkipBack size={15} /></button><button type="button" className="icon-button small" aria-label={t.visualizerPrevStep} title={t.visualizerPrevStep} onClick={visualStepBack} disabled={clampedStepIndex === -1}><ChevronLeft size={15} /></button><button type="button" className="icon-button small" aria-label={t.visualizerNextStep} title={t.visualizerNextStep} onClick={visualStepForward} disabled={clampedStepIndex >= visualTraceSteps.length - 1}><ChevronRight size={15} /></button><button type="button" className="icon-button small" aria-label={t.visualizerLastStep ?? 'Last step'} title={t.visualizerLastStep ?? 'Last step'} onClick={visualLastStep} disabled={clampedStepIndex >= visualTraceSteps.length - 1}><SkipForward size={15} /></button></div><div className="visualizer-scrubber-track"><input className="visualizer-scrubber" type="range" min={-1} max={Math.max(0, visualTraceSteps.length - 1)} value={clampedStepIndex} onChange={(event) => { setVisualStepIndex(Number(event.target.value)) }} />{errorTraceStep && <span className="visualizer-scrubber-error" title={errorTraceStep.label} style={{ '--marker-position': (visualTraceSteps.indexOf(errorTraceStep) + 1) / Math.max(1, visualTraceSteps.length) } as CSSProperties} />}</div><span className="visualizer-step-count">{clampedStepIndex === -1 ? t.visualizerBeforeStart : t.visualizerStepOf(clampedStepIndex + 1, visualTraceSteps.length)}</span>{visualTrace?.truncated && <span className="visualizer-truncated-hint"><AlertTriangle size={13} />{t.visualizerTruncated}</span>}</> : <span className="visualizer-step-count">{t.visualizerNoSteps}</span>}<div className="visualizer-mode" role="group" aria-label={t.visualizerModeLabel ?? 'Display'}><button type="button" aria-pressed={!substitutionMode} onClick={() => changeVisualizerMode('box')}>{t.visualizerModeBox ?? 'Box'}</button><button type="button" aria-pressed={substitutionMode} onClick={() => changeVisualizerMode('substitution')}>{t.visualizerModeSubstitution ?? 'Substitution'}</button></div><OptionsMenu label={t.visualizerOptions ?? 'Options'}><button type="button" role="menuitemcheckbox" aria-checked={animationsEnabled} className="visualizer-options-item" onClick={() => setAnimationsEnabled((enabled) => !enabled)}><span className="visualizer-options-check" aria-hidden="true" />{t.visualizerAnimate}</button>{workspaceCapabilities.export && <><button type="button" role="menuitemcheckbox" aria-checked={chainComments} className="visualizer-options-item" onClick={() => changeChainComments(!chainComments)}><span className="visualizer-options-check" aria-hidden="true" />{t.copyChainComments ?? 'Comments'}</button><button type="button" role="menuitem" className="visualizer-options-item visualizer-chain-copy" onClick={copyEvaluationChain} disabled={!canCopyChain}><Copy size={14} aria-hidden="true" />{chainFeedback === 'copied' ? (t.copyChainDone ?? 'Copied') : chainFeedback === 'failed' ? (t.copyChainFailed ?? 'Could not copy') : (t.copyChain ?? 'Copy \u2192 chain')}</button></>}</OptionsMenu>{workspaceCapabilities.exitVisualizer && <button type="button" className="icon-button small visualizer-exit" aria-label={t.exitVisualizer} title={t.exitVisualizer} onClick={exitVisualizer}><X size={16} /></button>}</div>}{isVisualizing && visualTrace?.error && !errorTraceStep && <div className="visualizer-warning"><AlertTriangle size={14} />{t.visualizerError(visualTrace.error)}</div>}{(workspaceCapabilities.editor || isVisualizing) && <section className="editor-panel"><div className="editor-tabs">{openFiles.map((path) => { const file = project.files[path]; return <button className={`editor-tab ${activeFile === path ? 'active' : ''}`} key={path} onClick={() => onOpenFile(path)}><span className={`tab-file-icon ${file.kind === 'python' ? 'python' : 'notes'}`}>{file.kind === 'python' ? <FileCode2 size={14} /> : <BookOpen size={14} />}</span><span>{file.path}</span><span className="tab-close" role="button" aria-label={t.closeFile(file.path)} onClick={(event) => { event.stopPropagation(); onCloseFile(path) }}><X size={13} /></span></button> })}</div><div className="editor-wrap">{isVisualizing ? <div className={`visualizer-view${animationsEnabled ? ' visualizer-animated' : ''}`} ref={visualizerScrollRef}><div className="visualizer-canvas" ref={visualizerCanvasRef}><Frame frameId={0} path={visualRootPath ?? activeFile} scope={{ kind: 'module' }} openFrames={framesForRender} nodeIndexByFile={astIndexByFile} visualSources={visualSources} trace={visualTrace?.trace ?? []} uptoStep={currentTraceStep?.step ?? -1} currentStep={currentTraceStep} nextStep={nextTraceStep} monaco={monaco} valueKindLabels={valueKindLabels} hiddenRanges={visualTrace?.hidden ?? {}} declareTarget={nextStepDeclareTarget} pendingCallLocals={pendingCallLocals} errorStep={isAtErrorStep ? errorTraceStep : null} collapsedCalls={collapsedCalls} collapsedCallsLabel={collapsedCallsLabel} substitutionMode={substitutionMode} boxHint={t.visualizerBoxHint ?? 'The box shows which return is executed.'} insideBox={false} activeHost={activeHost} errorHost={errorHost} finalNote={finalNote} />{animationsEnabled && closingBoxes.length > 0 && <div className="visualizer-closing-boxes">{closingBoxes.map((box) => <div key={box.id} className="visual-closing-box-ghost" style={{ left: box.left, top: box.top, width: box.width, height: box.height }} dangerouslySetInnerHTML={{ __html: box.html }} />)}</div>}{(connectorPaths.length > 0 || flights.length > 0) && <svg className="visualizer-connectors"><defs><marker id="visualizer-arrowhead" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" /></marker></defs>{connectorPaths.map((connector, index) => <path key={index} d={connector.d} markerEnd="url(#visualizer-arrowhead)" />)}{animationsEnabled && flights.map((flight) => <path key={`flight-${flight.id}`} className="visual-flight-arrow" d={flight.d} markerEnd="url(#visualizer-arrowhead)" />)}</svg>}{animationsEnabled && flights.length > 0 && <div className="visualizer-flights">{flights.map((flight) => <span key={flight.id} className="visual-flight-value" style={{ offsetPath: `path('${flight.d}')` }}>{flight.value}</span>)}</div>}</div></div> : <Editor key="normal-editor" height="100%" language={selectedFile.kind === 'python' ? 'python' : 'markdown'} theme="vs-dark" value={selectedFile.code} onChange={updateCode} options={{ minimap: { enabled: false }, fontSize: 15, lineHeight: 24, padding: { top: 22 }, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', scrollBeyondLastLine: false, smoothScrolling: true, automaticLayout: true, tabSize: 4, insertSpaces: true, detectIndentation: false }} />}</div></section>}<section className="output-panel"><div className="output-heading"><div className="output-title"><SquareTerminal size={16} /><span>{t.output}</span>{runtimeState !== 'ready' && <span className={`runtime-badge${runtimeState === 'failed' ? ' runtime-badge--failed' : ''}`}><span className="pulse" /> {t.pyodideRuntime}</span>}</div>{Object.keys(project.files).length > 1 && <span className="output-hint">{t.runsFile(project.mainFile)}</span>}</div>{!isVisualizing && testReport ? <TestReportView report={testReport} t={t} onVisualizeExample={workspaceCapabilities.visualization ? visualizeExample : null} /> : null}<pre ref={outputRef} hidden={!isVisualizing && testReport !== null}>{isVisualizing ? (isAtErrorStep ? <>{visualStdout && !visualStdout.endsWith('\n') ? `${visualStdout}\n` : visualStdout}<span className="output-error">{visualTrace?.error}</span></> : visualStdout || t.noOutput) : <>{output}{replEntries.map((entry) => <ReplTranscriptEntry key={entry.id} entry={entry} definitionHint={t.replDefinitionHint ?? 'Definitions belong in the file.'} />)}</>}</pre>{workspaceCapabilities.repl && <form className="repl-line" onSubmit={(event) => { event.preventDefault(); submitRepl() }}><span className="repl-prompt" aria-hidden="true">&gt;&gt;&gt;</span><input className="repl-input" value={replInput} onChange={(event) => { setReplInput(event.target.value); setReplHistoryIndex(null) }} onKeyDown={handleReplKeyDown} aria-label={t.replInputLabel ?? 'Python input'} spellCheck={false} autoComplete="off" autoCapitalize="off" />{workspaceCapabilities.visualization && <button type="button" className="secondary-button repl-visualize" onClick={visualizeRepl} disabled={!replInput.trim() || isRunning || isReplBusy || isVisualizerLoading}><Workflow size={14} /> {isVisualizerLoading ? t.visualizing : (t.replVisualize ?? 'Visualize input')}</button>}</form>}</section></div>{isGraphicsOpen ? <aside className="graphics-panel"><div className="output-heading"><div className="output-title"><Sparkles size={16} /><span>{t.turtleGraphics}</span>{graphics.length > 0 && <span className="runtime-badge"><span className="pulse" /> {t.gturtleWindow}</span>}</div><button className="icon-button small" aria-label={t.collapseGraphics} onClick={() => onGraphicsOpenChange(false)}><PanelRightClose size={15} /></button></div>{(isVisualizing ? (visualTrace?.graphics.slice(0, currentTraceStep?.graphicsLen ?? 0) as TurtleCommand[] ?? []) : graphics).length > 0 ? <GraphicsWindow commands={isVisualizing ? (visualTrace?.graphics.slice(0, currentTraceStep?.graphicsLen ?? 0) as TurtleCommand[] ?? []) : graphics} /> : <p className="graphics-empty">{t.graphicsEmptyBefore} <code>gturtle</code> {t.graphicsEmptyAfter}</p>}</aside> : <button className="graphics-collapsed-toggle" aria-label={t.expandGraphics} onClick={() => onGraphicsOpenChange(true)}><PanelRightOpen size={16} /><span>{t.graphicsCollapsedLabel}</span></button>}</div>
+              <div className="main-split"><div className="editor-column"><div className="editor-header"><div className="breadcrumbs"><span>{project.name}</span><span>/</span><strong>{selectedFile.path}</strong></div><div className="editor-actions">{isVisualizing ? null : workspaceCapabilities.actions ? <><button className="secondary-button" onClick={() => { setOutput(t.readyOutput); setOutputErrorHint(null); setReplEntries([]); setTestReport(null) }}><RotateCcw size={15} /> {t.resetOutput}</button><button className="secondary-button" onClick={runVisualize} disabled={isRunning || isVisualizerLoading}><Workflow size={15} /> {isVisualizerLoading ? t.visualizing : t.visualize}</button>{workspaceCapabilities.tests && <button className="secondary-button" onClick={runTests} disabled={isTesting}><FlaskConical size={15} /> {isTesting ? (t.testsRunning ?? 'Running tests...') : (t.runTests ?? 'Tests')}</button>}<button className="run-button" onClick={runCode} disabled={isRunning}><Play size={15} fill="currentColor" /> {isRunning ? t.running : t.runProject}</button></> : null}</div></div>{isVisualizing && <div className="visualizer-bar">{visualTraceSteps.length > 0 ? <><div className="visualizer-controls"><button type="button" className="icon-button small" aria-label={t.visualizerFirstStep ?? t.visualizerRestart} title={t.visualizerFirstStep ?? t.visualizerRestart} onClick={visualFirstStep} disabled={clampedStepIndex === -1}><SkipBack size={15} /></button><button type="button" className="icon-button small" aria-label={t.visualizerPrevStep} title={t.visualizerPrevStep} onClick={visualStepBack} disabled={clampedStepIndex === -1}><ChevronLeft size={15} /></button><button type="button" className="icon-button small" aria-label={t.visualizerNextStep} title={t.visualizerNextStep} onClick={visualStepForward} disabled={clampedStepIndex >= visualTraceSteps.length - 1}><ChevronRight size={15} /></button><button type="button" className="icon-button small" aria-label={t.visualizerLastStep ?? 'Last step'} title={t.visualizerLastStep ?? 'Last step'} onClick={visualLastStep} disabled={clampedStepIndex >= visualTraceSteps.length - 1}><SkipForward size={15} /></button></div><div className="visualizer-scrubber-track"><input className="visualizer-scrubber" type="range" min={-1} max={Math.max(0, visualTraceSteps.length - 1)} value={clampedStepIndex} onChange={(event) => { setVisualStepIndex(Number(event.target.value)) }} />{errorTraceStep && <span className="visualizer-scrubber-error" title={errorTraceStep.label} style={{ '--marker-position': (visualTraceSteps.indexOf(errorTraceStep) + 1) / Math.max(1, visualTraceSteps.length) } as CSSProperties} />}</div><span className="visualizer-step-count">{clampedStepIndex === -1 ? t.visualizerBeforeStart : t.visualizerStepOf(clampedStepIndex + 1, visualTraceSteps.length)}</span>{visualTrace?.truncated && <span className="visualizer-truncated-hint"><AlertTriangle size={13} />{t.visualizerTruncated}</span>}</> : <span className="visualizer-step-count">{t.visualizerNoSteps}</span>}<div className="visualizer-mode" role="group" aria-label={t.visualizerModeLabel ?? 'Display'}><button type="button" aria-pressed={!substitutionMode} onClick={() => changeVisualizerMode('box')}>{t.visualizerModeBox ?? 'Box'}</button><button type="button" aria-pressed={substitutionMode} onClick={() => changeVisualizerMode('substitution')}>{t.visualizerModeSubstitution ?? 'Substitution'}</button></div><OptionsMenu label={t.visualizerOptions ?? 'Options'}><button type="button" role="menuitemcheckbox" aria-checked={animationsEnabled} className="visualizer-options-item" onClick={() => setAnimationsEnabled((enabled) => !enabled)}><span className="visualizer-options-check" aria-hidden="true" />{t.visualizerAnimate}</button>{workspaceCapabilities.export && <><button type="button" role="menuitemcheckbox" aria-checked={chainComments} className="visualizer-options-item" onClick={() => changeChainComments(!chainComments)}><span className="visualizer-options-check" aria-hidden="true" />{t.copyChainComments ?? 'Comments'}</button><button type="button" role="menuitem" className="visualizer-options-item visualizer-chain-copy" onClick={copyEvaluationChain} disabled={!canCopyChain}><Copy size={14} aria-hidden="true" />{chainFeedback === 'copied' ? (t.copyChainDone ?? 'Copied') : chainFeedback === 'failed' ? (t.copyChainFailed ?? 'Could not copy') : (t.copyChain ?? 'Copy \u2192 chain')}</button></>}</OptionsMenu>{workspaceCapabilities.exitVisualizer && <button type="button" className="icon-button small visualizer-exit" aria-label={t.exitVisualizer} title={t.exitVisualizer} onClick={exitVisualizer}><X size={16} /></button>}</div>}{isVisualizing && visualTrace?.error && !errorTraceStep && <div className="visualizer-warning"><AlertTriangle size={14} />{t.visualizerError(visualTrace.error)}</div>}{(workspaceCapabilities.editor || isVisualizing) && <section className="editor-panel"><div className="editor-tabs">{openFiles.map((path) => { const file = project.files[path]; return <button className={`editor-tab ${activeFile === path ? 'active' : ''}`} key={path} onClick={() => onOpenFile(path)}><span className={`tab-file-icon ${file.kind === 'python' ? 'python' : 'notes'}`}>{file.kind === 'python' ? <FileCode2 size={14} /> : <BookOpen size={14} />}</span><span>{file.path}</span><span className="tab-close" role="button" aria-label={t.closeFile(file.path)} onClick={(event) => { event.stopPropagation(); onCloseFile(path) }}><X size={13} /></span></button> })}</div><div className="editor-wrap">{isVisualizing ? <div className={`visualizer-view${animationsEnabled ? ' visualizer-animated' : ''}`} ref={visualizerScrollRef}><div className="visualizer-canvas" ref={visualizerCanvasRef}><Frame frameId={0} path={visualRootPath ?? activeFile} scope={{ kind: 'module' }} openFrames={framesForRender} nodeIndexByFile={astIndexByFile} visualSources={visualSources} trace={visualTrace?.trace ?? []} uptoStep={currentTraceStep?.step ?? -1} currentStep={currentTraceStep} nextStep={nextTraceStep} monaco={monaco} valueKindLabels={valueKindLabels} hiddenRanges={visualTrace?.hidden ?? {}} declareTarget={nextStepDeclareTarget} pendingCallLocals={pendingCallLocals} errorStep={isAtErrorStep ? errorTraceStep : null} collapsedCalls={collapsedCalls} collapsedCallsLabel={collapsedCallsLabel} substitutionMode={substitutionMode} boxHint={t.visualizerBoxHint ?? 'The box shows which return is executed.'} insideBox={false} activeHost={activeHost} errorHost={errorHost} finalNote={finalNote} errorHint={isAtErrorStep && visualTrace?.errorHint && t.errorHint?.(visualTrace.errorHint, 'other') ? <ErrorHintNote hint={visualTrace.errorHint} t={t} /> : null} />{animationsEnabled && closingBoxes.length > 0 && <div className="visualizer-closing-boxes">{closingBoxes.map((box) => <div key={box.id} className="visual-closing-box-ghost" style={{ left: box.left, top: box.top, width: box.width, height: box.height }} dangerouslySetInnerHTML={{ __html: box.html }} />)}</div>}{(connectorPaths.length > 0 || flights.length > 0) && <svg className="visualizer-connectors"><defs><marker id="visualizer-arrowhead" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" /></marker></defs>{connectorPaths.map((connector, index) => <path key={index} d={connector.d} markerEnd="url(#visualizer-arrowhead)" />)}{animationsEnabled && flights.map((flight) => <path key={`flight-${flight.id}`} className="visual-flight-arrow" d={flight.d} markerEnd="url(#visualizer-arrowhead)" />)}</svg>}{animationsEnabled && flights.length > 0 && <div className="visualizer-flights">{flights.map((flight) => <span key={flight.id} className="visual-flight-value" style={{ offsetPath: `path('${flight.d}')` }}>{flight.value}</span>)}</div>}</div></div> : <Editor key="normal-editor" height="100%" language={selectedFile.kind === 'python' ? 'python' : 'markdown'} theme="vs-dark" value={selectedFile.code} onChange={updateCode} options={{ minimap: { enabled: false }, fontSize: 15, lineHeight: 24, padding: { top: 22 }, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', scrollBeyondLastLine: false, smoothScrolling: true, automaticLayout: true, tabSize: 4, insertSpaces: true, detectIndentation: false }} />}</div></section>}<section className="output-panel"><div className="output-heading"><div className="output-title"><SquareTerminal size={16} /><span>{t.output}</span>{runtimeState !== 'ready' && <span className={`runtime-badge${runtimeState === 'failed' ? ' runtime-badge--failed' : ''}`}><span className="pulse" /> {t.pyodideRuntime}</span>}</div>{Object.keys(project.files).length > 1 && <span className="output-hint">{t.runsFile(project.mainFile)}</span>}</div>{!isVisualizing && testReport ? <TestReportView report={testReport} t={t} onVisualizeExample={workspaceCapabilities.visualization ? visualizeExample : null} /> : null}<pre ref={outputRef} hidden={!isVisualizing && testReport !== null}>{isVisualizing ? (isAtErrorStep ? <>{visualStdout && !visualStdout.endsWith('\n') ? `${visualStdout}\n` : visualStdout}<span className="output-error">{visualTrace?.error}</span></> : visualStdout || t.noOutput) : <>{output}<ErrorHintNote hint={outputErrorHint} t={t} />{replEntries.map((entry) => <ReplTranscriptEntry key={entry.id} entry={entry} definitionHint={t.replDefinitionHint ?? 'Definitions belong in the file.'} t={t} />)}</>}</pre>{workspaceCapabilities.repl && <form className="repl-line" onSubmit={(event) => { event.preventDefault(); submitRepl() }}><span className="repl-prompt" aria-hidden="true">&gt;&gt;&gt;</span><input className="repl-input" value={replInput} onChange={(event) => { setReplInput(event.target.value); setReplHistoryIndex(null) }} onKeyDown={handleReplKeyDown} aria-label={t.replInputLabel ?? 'Python input'} spellCheck={false} autoComplete="off" autoCapitalize="off" />{workspaceCapabilities.visualization && <button type="button" className="secondary-button repl-visualize" onClick={visualizeRepl} disabled={!replInput.trim() || isRunning || isReplBusy || isVisualizerLoading}><Workflow size={14} /> {isVisualizerLoading ? t.visualizing : (t.replVisualize ?? 'Visualize input')}</button>}</form>}</section></div>{isGraphicsOpen ? <aside className="graphics-panel"><div className="output-heading"><div className="output-title"><Sparkles size={16} /><span>{t.turtleGraphics}</span>{graphics.length > 0 && <span className="runtime-badge"><span className="pulse" /> {t.gturtleWindow}</span>}</div><button className="icon-button small" aria-label={t.collapseGraphics} onClick={() => onGraphicsOpenChange(false)}><PanelRightClose size={15} /></button></div>{(isVisualizing ? (visualTrace?.graphics.slice(0, currentTraceStep?.graphicsLen ?? 0) as TurtleCommand[] ?? []) : graphics).length > 0 ? <GraphicsWindow commands={isVisualizing ? (visualTrace?.graphics.slice(0, currentTraceStep?.graphicsLen ?? 0) as TurtleCommand[] ?? []) : graphics} /> : <p className="graphics-empty">{t.graphicsEmptyBefore} <code>gturtle</code> {t.graphicsEmptyAfter}</p>}</aside> : <button className="graphics-collapsed-toggle" aria-label={t.expandGraphics} onClick={() => onGraphicsOpenChange(true)}><PanelRightOpen size={16} /><span>{t.graphicsCollapsedLabel}</span></button>}</div>
       {inputRequest !== null && <div className="input-dialog-backdrop" role="presentation" onClick={() => respondToInput(true)}><form className="input-dialog" role="dialog" aria-modal="true" aria-label={t.inputDialogTitle} onClick={(event) => event.stopPropagation()} onSubmit={(event) => { event.preventDefault(); respondToInput(false) }}><div className="input-dialog-heading"><Terminal size={16} /><span>{t.inputDialogTitle}</span></div><p className="input-dialog-prompt">{inputRequest || t.inputDialogFallbackPrompt}</p><input ref={inputFieldRef} className="input-dialog-field" type="text" value={inputValue} onChange={(event) => setInputValue(event.target.value)} placeholder={t.inputPlaceholder} /><div className="input-dialog-actions"><button type="button" className="secondary-button" onClick={() => respondToInput(true)}>{t.inputCancel}</button><button type="submit" className="run-button">{t.inputSubmit}</button></div></form></div>}
     </div>
   )

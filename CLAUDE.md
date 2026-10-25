@@ -13,14 +13,15 @@ npm run build          # tsc -b && vite build && copy src/style.css -> dist/ (li
 npm run dev            # vite build --watch, for use with npm link/yalc in a host shell
 npm run lint           # oxlint
 npm run test:protocol  # builds the library, then runs scripts/check-embed-protocol.mjs against dist/
-npm run test:runtime   # the runtime under CPython: scripts/check-runtime-{columns,values,doctests}.py
+npm run test:runtime   # the runtime under CPython: scripts/check-runtime-{columns,values,doctests,calls,hints}.py
+npm run test:hints     # the error hints' wording (de/en) against the built dist/ (run a build first)
 npm run build:embed    # builds the iframe app + demo page into dist-embed/
 npm run preview:embed  # serves dist-embed/ with COOP/COEP headers; open /demo.html
 ```
 
 `npm run dev:embed` currently 404s: `embed/index.html` loads `../src/embed/main.tsx`, which lies outside the Vite root, so only the build works. Use `build:embed` + `preview:embed`.
 
-There is no unit test framework. The automated checks are `test:protocol` (plain `node:assert` against the built `dist/index.js`; add protocol validation cases there) and `test:runtime` (plain Python scripts that exec `src/runtime/` under CPython 3.12, Pyodide's version; add runtime regression cases there). `.github/workflows/ci.yml` runs lint, both builds and both checks on every push and pull request. Nothing that needs Pyodide in a browser (the worker, the UI) is checked automatically. `npm run lint` has one known warning in `GlPythonWorkspace.tsx` (`react(immutability)` on the `cursor` variable in `Frame`).
+There is no unit test framework. The automated checks are `test:protocol` (plain `node:assert` against the built `dist/index.js`; add protocol validation cases there) and `test:runtime` (plain Python scripts that exec `src/runtime/` under CPython 3.12, Pyodide's version; add runtime regression cases there). `.github/workflows/ci.yml` runs lint, both builds and the checks on every pull request and on pushes to `main`. Nothing that needs Pyodide in a browser (the worker, the UI) is checked automatically. `npm run lint` has one known warning in `GlPythonWorkspace.tsx` (`react(immutability)` on the `cursor` variable in `Frame`).
 
 **Releases.**
 - The package is consumed from git: the glpython IDE (`../glpython`) pins `glpython-editor` by tag in its `package.json`. The `prepare` script builds `dist/` on install.
@@ -34,6 +35,8 @@ There is no unit test framework. The automated checks are `test:protocol` (plain
 - `vite.embed.config.ts` — app mode rooted at `embed/` (`index.html` = iframe, `demo.html` = parent test page). Dev/preview servers set COOP/COEP headers; `embed/public/coi-serviceworker.js` is the fallback for static hosts.
 - `src/style.css` is not imported by any module; it's copied to `dist/style.css` by the build script and hosts must import `glpython-editor/style.css` themselves. All its colours, fonts and radii are `--glp-*` tokens defined on `:root` (README «Look»; values from the course design). Use a token, never a new literal colour; shadows only for floating elements. The embed's flat section layout lives in `src/embed/style.css`.
 
+**Error hints.** `src/runtime/hints.py` (loaded first) maps an exception to a hint for the unit's common mistakes, matched on type *and* message; anything else gets none. Run, REPL, the visualizer (`errorHint`) and the doctest runner report it as data (`{kind, ...names}`); `CoreStrings.errorHint` words it, `ErrorHintNote` shows it below Python's unchanged message. New kinds need a case in `check-runtime-hints.py` and `check-error-hints.mjs`.
+
 **Python execution lives in a web worker.** `src/pyodide-worker.js` loads Pyodide from the jsDelivr CDN and inlines the Python files under `src/runtime/` via `?raw` imports:
 - `session.py` — invalidates cached modules between runs and runs the main file by `exec` in a plain dict, `_glpython_repl_namespace`, which REPL inputs (`_glpython_repl`) reuse. It's not `runpy`, so the file's functions and the REPL share one global namespace. Also has `_glpython_error_message` (a Python-style last traceback line), which `visualizer.py` uses too.
 - `gturtle.py` — the `gturtle` module students import; it just records drawing commands, which are returned as JSON and rendered by `GraphicsWindow.tsx`.
@@ -43,6 +46,7 @@ There is no unit test framework. The automated checks are `test:protocol` (plain
   - A call into a function from another file switches `_glpython_current_path` while its body runs.
   - `_glpython_short_form` marks functions whose body is a single `return <expr>` (docstring allowed). Their call-enter steps carry `shortForm` for the UI's substitution mode.
   - `_glpython_run_visual_repl` traces a REPL input as the pseudo-file `<repl>` against the REPL namespace. The file's functions are swapped for traced versions of their `def`s, taken from the sources of the last Run. It's a dry run that leaves the namespace unchanged.
+  - `_GlpythonFunction` calls a stub with the same parameters first, so a call with wrong arguments raises Python's own `TypeError` (same message) at the call site.
   - Columns: `ast` counts UTF-8 bytes, `tokenize` characters, the UI UTF-16 code units. Every offset into a line goes through `_glpython_text_before` (the text in front of it, for slicing) or `_glpython_ui_column` (a column for the UI); never slice a line by an `ast` offset directly.
   - Values are shown through `_glpython_safe_repr`, which writes types as learners do (`int`, not `<class 'int'>`); the program's own output keeps Python's repr.
 
