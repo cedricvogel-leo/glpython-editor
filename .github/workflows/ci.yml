@@ -1,7 +1,10 @@
 name: CI
 
+# A pull request runs once (pull_request); main is checked again after the
+# merge.
 on:
   push:
+    branches: [main]
   pull_request:
 
 permissions:
@@ -27,8 +30,11 @@ jobs:
       - run: npm run build:embed
       # Builds the library again and checks the embed protocol against dist/.
       - run: npm run test:protocol
+      # The hints' wording in German and English, against that build.
+      - run: npm run test:hints
       # The runtime under CPython: the visualizer's columns, docstrings,
-      # condition comments and readable types, and the doctest runner.
+      # condition comments, readable types and argument checks, the doctest
+      # runner, and which errors get a hint.
       - run: npm run test:runtime
       - name: Not checked here
         run: |
