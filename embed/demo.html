@@ -40,7 +40,7 @@
           type: `glpython:${command}`,
           version: GLPYTHON_EMBED_PROTOCOL_VERSION,
         }
-        if (command !== 'reset') {
+        if (command !== 'reset' && command !== 'stop') {
           message.source = sources[mode]
           message.mode = mode
         }
@@ -63,6 +63,13 @@
         if (event.data?.type === 'glpython:ready') {
           events.dataset.inputAvailable = String(event.data.capabilities?.input === true)
           send('load')
+        }
+        // Version 4: while Python is busy (e.g. "while True: pass" typed into
+        // the REPL), Run becomes Stop.
+        if (event.data?.type === 'glpython:busy') {
+          const runButton = document.querySelector('[data-command="run"], [data-command="stop"]')
+          runButton.dataset.command = event.data.busy ? 'stop' : 'run'
+          runButton.textContent = event.data.busy ? '■ Stop' : 'Run'
         }
         if (event.data?.type === 'glpython:resize' && Number.isFinite(event.data.height)) {
           iframe.style.height = `${Math.max(400, event.data.height)}px`

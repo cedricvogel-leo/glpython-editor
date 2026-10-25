@@ -175,9 +175,25 @@ visualizer's error marking, worded by `errorHint` and labelled by
 In the visualizer, a call with the wrong arguments fails as in Python, with
 Python's own `TypeError`.
 
+### Console and Stop
+
+The console (`output`: «Konsole») is one chronological transcript, like Python
+in a terminal: what the program printed - shown while it runs, not only at the
+end - then every REPL input with its answer, every Tests report and every note,
+in the order they happened. Errors and their hints stand where they happened.
+Run and Reset clear it. It keeps the last 100,000 characters of a long output.
+
+While Python is busy for more than a moment (a program, a REPL input, Tests,
+a visualization), the run button becomes **Stop** (`stop`: «Stoppen»). Stopping
+ends Python's worker and starts a new one: the code stays, the console keeps
+what was printed and adds `stoppedNote`, and the REPL starts in an empty
+namespace (earlier entries can't be visualized anymore). Hosts can stop with
+the command `{ id, type: 'stop' }`, and learn when Python is busy through the
+`onBusyChange` prop.
+
 ### REPL
 
-Below the output panel, a `>>>` input line runs Python in the namespace of the
+Below the console, a `>>>` input line runs Python in the namespace of the
 last Run, so learners can call the file's functions directly. An expression
 shows its value (`None` too, greyed out); a statement such as `a = 5` shows
 nothing; a `def` runs but adds the hint `replDefinitionHint`; an error shows
@@ -276,7 +292,13 @@ files run as a black box. Version 3 adds `glpython:test` (same fields as
 `run`), which runs the doctests of that file. The embed still accepts every
 earlier version and answers every parent in the version that parent last used
 (version 1 until it hears otherwise), so older parents keep working.
-`glpython:ready` reports `capabilities.files` and `capabilities.tests`.
+Version 4 adds `glpython:stop`, which stops what Python is running by
+restarting it (the source stays), and `glpython:busy` (`busy: true|false`),
+which the embed sends to a version 4 parent when Python has been busy for more
+than a moment (a program, a REPL input, Tests, a visualization), so the
+parent's run button can become a stop button, as the workspace's own does.
+`glpython:ready` reports `capabilities.files`, `capabilities.tests` and
+`capabilities.stop`.
 
 ```ts
 iframe.contentWindow?.postMessage({

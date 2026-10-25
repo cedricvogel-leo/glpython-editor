@@ -80,10 +80,10 @@ assert.equal(parseParentMessage({
 }), null)
 
 // Version 1 (a single source) is still accepted, without files.
-assert.equal(GLPYTHON_EMBED_PROTOCOL_VERSION, 3)
+assert.equal(GLPYTHON_EMBED_PROTOCOL_VERSION, 4)
 assert.deepEqual(parseParentMessage({ type: 'glpython:run', version: 1, source: 'print(1)', mode: 'eval' }), { type: 'glpython:run', version: 1, source: 'print(1)', mode: 'eval' })
 assert.equal(parseParentMessage({ type: 'glpython:run', version: 1, source: 'x', files: [{ path: 'main.py', source: 'x' }], mainFile: 'main.py' }), null)
-assert.equal(parseParentMessage({ type: 'glpython:reset', version: 4 }), null)
+assert.equal(parseParentMessage({ type: 'glpython:reset', version: 5 }), null)
 
 // Version 2: a program of several files and the one to run.
 const program = {
@@ -115,6 +115,14 @@ assert.deepEqual(parseParentMessage({ type: 'glpython:test', version: 3, source:
 assert.equal(parseParentMessage({ ...tests, version: 2 }), null)
 assert.equal(parseParentMessage({ type: 'glpython:test', version: 1, source: 'x' }), null)
 assert.deepEqual(parseParentMessage({ ...program, version: 3 }), { ...program, version: 3 })
+
+// Version 4: stopping what Python runs; not before version 4. Earlier
+// messages are accepted in version 4 too.
+assert.deepEqual(parseParentMessage({ type: 'glpython:stop', version: 4 }), { type: 'glpython:stop', version: 4 })
+assert.equal(parseParentMessage({ type: 'glpython:stop', version: 3 }), null)
+assert.equal(parseParentMessage({ type: 'glpython:stop', version: 1 }), null)
+assert.deepEqual(parseParentMessage({ ...tests, version: 4 }), { ...tests, version: 4 })
+assert.deepEqual(parseParentMessage({ type: 'glpython:reset', version: 4 }), { type: 'glpython:reset', version: 4 })
 
 const readyMessage = {
   type: 'glpython:ready',

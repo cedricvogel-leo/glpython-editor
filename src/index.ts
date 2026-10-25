@@ -22,6 +22,7 @@ export type {
   GlPythonErrorMessage,
   GlPythonLoadMessage,
   GlPythonResetMessage,
+  GlPythonStopMessage,
   GlPythonRunMessage,
   GlPythonSourceMessage,
   GlPythonVisualizeMessage,
@@ -29,6 +30,7 @@ export type {
   GlPythonParentMessage,
   GlPythonReadyMessage,
   GlPythonResizeMessage,
+  GlPythonBusyMessage,
 } from './embedProtocol'
 
 export type { Project, ProjectFile, ProjectFileKind } from './project'
