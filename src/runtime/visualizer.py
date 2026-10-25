@@ -53,9 +53,13 @@ def _glpython_is_uninteresting_for_substitution(value):
   # enclosing Call node's own eval step show the real result instead.
   return callable(value) or isinstance(value, _glpython_types.ModuleType)
 
+# A value as the visualizer shows it: Python's repr, except that a type reads
+# the way learners write it ("int", "list", "NoneType" instead of
+# "<class 'int'>"), so "type(a) != list" steps to "int != list". The program's
+# own output (print, the REPL transcript) keeps Python's repr.
 def _glpython_safe_repr(value, limit=160):
   try:
-    text = repr(value)
+    text = value.__name__ if isinstance(value, type) else repr(value)
   except Exception:
     text = "<unrepresentable>"
   if len(text) > limit:
@@ -163,11 +167,15 @@ class _GlpythonCallDepthExceeded(Exception):
 # The UI indexes text in UTF-16 code units (JavaScript strings), but Python's
 # ast reports columns in UTF-8 bytes and tokenize in characters - they only
 # agree on plain ASCII lines, not with "ü" (2 bytes, 1 unit) or "🙂" (4 bytes,
-# 1 character, 2 units). Every column sent to the UI goes through here; `unit`
-# says what `offset` counts ("utf8" bytes or "chars").
+# 1 character, 2 units). Every offset into a line goes through these two:
+# _glpython_text_before for the text in front of it (to slice a Python
+# string), _glpython_ui_column for a column sent to the UI. `unit` says what
+# `offset` counts ("utf8" bytes or "chars").
+def _glpython_text_before(line, offset, unit="utf8"):
+  return line.encode("utf-8")[:offset].decode("utf-8", "replace") if unit == "utf8" else line[:offset]
+
 def _glpython_ui_column(line, offset, unit="utf8"):
-  prefix = line.encode("utf-8")[:offset].decode("utf-8", "replace") if unit == "utf8" else line[:offset]
-  return len(prefix.encode("utf-16-le")) // 2
+  return len(_glpython_text_before(line, offset, unit).encode("utf-16-le")) // 2
 
 # A node's position for the UI: lines as Python counts them, columns in UTF-16
 # code units (set by _glpython_preprocess; nodes it never saw keep Python's).
@@ -834,7 +842,7 @@ def _glpython_source_with_values(expr, scope):
   source = getattr(expr, "_glpython_source", None)
   if source is None or getattr(expr, "lineno", None) is None:
     return None
-  lines = [line.encode("utf-8") for line in source.split("\n")]
+  lines = source.split("\n")
   replacements = []
   for name in _glpython_names_read(expr):
     try:
@@ -849,10 +857,10 @@ def _glpython_source_with_values(expr, scope):
     shift = expr.col_offset if row == 0 else 0
     if not 0 <= row < len(lines):
       continue
-    start = len(lines[row][:name.col_offset - shift].decode("utf-8", "replace"))
-    end = len(lines[row][:name.end_col_offset - shift].decode("utf-8", "replace"))
+    start = len(_glpython_text_before(lines[row], name.col_offset - shift))
+    end = len(_glpython_text_before(lines[row], name.end_col_offset - shift))
     replacements.append((row, start, end, _glpython_safe_repr(value)))
-  text_lines = [line.decode("utf-8") for line in lines]
+  text_lines = list(lines)
   for row, start, end, value_text in sorted(replacements, reverse=True):
     text_lines[row] = text_lines[row][:start] + value_text + text_lines[row][end:]
   return " ".join(line.strip() for line in text_lines)
@@ -1376,7 +1384,7 @@ def _glpython_hidden_ranges(source, tree):
       if token.type != tokenize.COMMENT:
         continue
       (row, col), (end_row, end_col) = token.start, token.end
-      before = lines[row - 1][:col]
+      before = _glpython_text_before(lines[row - 1], col, "chars")
       if before.strip():
         # A comment after code: drop it together with the spaces before it.
         # (tokenize counts characters; the UI needs UTF-16 code units.)
@@ -1392,7 +1400,7 @@ def _glpython_hidden_ranges(source, tree):
     if not (isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str)):
       continue
     # Only a docstring on lines of its own (not "def f(): \"\"\"doc\"\"\"; ...").
-    if lines[first.lineno - 1][:first.col_offset].strip() or first.lineno == node.lineno:
+    if _glpython_text_before(lines[first.lineno - 1], first.col_offset).strip() or first.lineno == node.lineno:
       continue
     ranges.append([first.lineno, 0, first.end_lineno + 1, 0])
   return ranges

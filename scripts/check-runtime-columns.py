@@ -123,6 +123,26 @@ exec(compile(PROGRAM, "/main.py", "exec"), namespace["_glpython_repl_namespace"]
 check_trace("REPL", "<repl>", {"main.py": PROGRAM, "<repl>": "länge(3) + 1"},
             lambda: namespace["_glpython_run_visual_repl"]("länge(3) + 1", json.dumps({"main.py": PROGRAM}), "main.py"))
 
+# A docstring, and the evaluation chain's condition comment («# 'ä🙂' == ...
+# ist True»), on lines with ä and 🙂: both slice lines through the same
+# conversion as the columns above.
+DOC_PROGRAM = '''def prüfe(wört, zähler):
+    """Prüft, ob wört «ä🙂» ist."""
+    if "🙂" in wört and zähler > 2:  # Kommentar mit ö
+        return "ja"
+    return "nein"
+
+prüfe("ä🙂", 3)
+'''
+result = json.loads(namespace["_glpython_trace_program"]("main.py", {"main.py": DOC_PROGRAM}, None))
+hidden = result["hidden"]["main.py"]
+if [2, 0, 3, 0] not in hidden:
+    failures.append(f"docstring: line 2 not hidden as a docstring, hidden ranges are {hidden}")
+conditions = [step.get("conditionText") for step in result["trace"] if step["kind"] == "branch"]
+expected_condition = """"🙂" in 'ä🙂' and 3 > 2"""
+if conditions != [expected_condition]:
+    failures.append(f"condition comment: got {conditions}, expected {[expected_condition]}")
+
 if failures:
     print("\n".join(failures))
     sys.exit(f"{len(failures)} column check(s) failed.")
