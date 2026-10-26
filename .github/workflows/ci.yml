@@ -36,6 +36,10 @@ jobs:
       # condition comments, readable types and argument checks, the doctest
       # runner, and which errors get a hint.
       - run: npm run test:runtime
+      # The console in Chrome (on the runner) with Pyodide from its CDN,
+      # driving the embed built above: Tests → edit → Tests shows the new
+      # report (P20).
+      - run: npm run test:console
       - name: Not checked here
         run: |
-          echo "::notice title=Not run in CI::Needs Pyodide in a browser, so it isn't checked here: the worker (run, REPL, Tests in the browser, input() bridge, gturtle) and the UI. Check these in the embed preview (npm run build:embed && npm run preview:embed)."
+          echo "::notice title=Not run in CI::Needs Pyodide in a browser, so apart from test:console it isn't checked here: the worker (run, REPL, input() bridge, gturtle) and the UI. Check these in the embed preview (npm run build:embed && npm run preview:embed)."

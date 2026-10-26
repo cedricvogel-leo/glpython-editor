@@ -15,13 +15,14 @@ npm run lint           # oxlint
 npm run test:protocol  # builds the library, then runs scripts/check-embed-protocol.mjs against dist/
 npm run test:runtime   # the runtime under CPython: scripts/check-runtime-{columns,values,doctests,calls,hints,fidelity,replay}.py
 npm run test:hints     # the error hints' wording (de/en) against the built dist/ (run a build first)
+npm run test:console   # the console in Chrome with Pyodide, against dist-embed/ (run build:embed first)
 npm run build:embed    # builds the iframe app + demo page into dist-embed/
 npm run preview:embed  # serves dist-embed/ with COOP/COEP headers; open /demo.html
 ```
 
 `npm run dev:embed` currently 404s: `embed/index.html` loads `../src/embed/main.tsx`, which lies outside the Vite root, so only the build works. Use `build:embed` + `preview:embed`.
 
-There is no unit test framework. The automated checks are `test:protocol` (plain `node:assert` against the built `dist/index.js`; add protocol validation cases there) and `test:runtime` (plain Python scripts that exec `src/runtime/` under CPython 3.12, Pyodide's version; add runtime regression cases there). `.github/workflows/ci.yml` runs lint, both builds and the checks on every pull request and on pushes to `main`. Nothing that needs Pyodide in a browser (the worker, the UI) is checked automatically. `npm run lint` has one known warning in `GlPythonWorkspace.tsx` (`react(immutability)` on the `cursor` variable in `Frame`).
+There is no unit test framework. The automated checks are `test:protocol` (plain `node:assert` against the built `dist/index.js`; add protocol validation cases there) and `test:runtime` (plain Python scripts that exec `src/runtime/` under CPython 3.12, Pyodide's version; add runtime regression cases there). `.github/workflows/ci.yml` runs lint, both builds and the checks on every pull request and on pushes to `main`. The one browser check is `test:console` (`scripts/check-console-browser.mjs`): `playwright-core` drives the installed Chrome (GitHub's runner has one) against `vite preview` of `dist-embed/`, through the embed protocol, with Pyodide from its CDN; add browser regression cases there. Everything else that needs Pyodide in a browser (the worker, most of the UI) is not checked automatically. `npm run lint` has one known warning in `GlPythonWorkspace.tsx` (`react(immutability)` on the `cursor` variable in `Frame`).
 
 **Releases.**
 - The package is consumed from git: the glpython IDE (`../glpython`) pins `glpython-editor` by tag in its `package.json`. The `prepare` script builds `dist/` on install.
