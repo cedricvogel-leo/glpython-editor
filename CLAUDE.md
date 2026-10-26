@@ -24,6 +24,8 @@ npm run preview:embed  # serves dist-embed/ with COOP/COEP headers; open /demo.h
 
 There is no unit test framework. The automated checks are `test:protocol` (plain `node:assert` against the built `dist/index.js`; add protocol validation cases there) and `test:runtime` (plain Python scripts that exec `src/runtime/` under CPython 3.12, Pyodide's version; add runtime regression cases there). `.github/workflows/ci.yml` runs lint, both builds and the checks on every pull request and on pushes to `main`. The one browser check is `test:console` (`scripts/check-console-browser.mjs`): `playwright-core` drives the installed Chrome (GitHub's runner has one) against `vite preview` of `dist-embed/`, through the embed protocol, with Pyodide from its CDN; add browser regression cases there. Everything else that needs Pyodide in a browser (the worker, most of the UI) is not checked automatically. `npm run lint` has one known warning in `GlPythonWorkspace.tsx` (`react(immutability)` on the `cursor` variable in `Frame`).
 
+**Licence.** MIT (`LICENSE`). `THIRD_PARTY_NOTICES.md` lists the third-party code in the repo and in the embed's bundle, with license texts (the build strips license comments, so `build:embed` copies `LICENSE` and the notices into `dist-embed/`). When a bundled dependency is added or changed, or code is copied in, update it: the embed's bundled packages are the `node_modules` paths in `dist-embed/assets/*.js.map`.
+
 **Releases.**
 - The package is consumed from git: the glpython IDE (`../glpython`) pins `glpython-editor` by tag in its `package.json`. The `prepare` script builds `dist/` on install.
 - To release, put a lightweight tag (`vX.Y.Z`; `package.json` keeps `0.1.0`) on the merge commit in `main`, then bump the tag in the IDE.

@@ -1,3 +1,10 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+// (The notice above is the one of Monaco Editor's python.ts, which this file
+// adapts; Monaco's license text is in THIRD_PARTY_NOTICES.md.)
+
 // glpython's Python language for Monaco: Monaco's own Python definition
 // (monaco-editor, src/basic-languages/python/python.ts, MIT license) with
 // three changes, so the editor and the visualizer (see pyHighlight.ts) colour
