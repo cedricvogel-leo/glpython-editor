@@ -177,6 +177,9 @@ type WorkspaceCommand = {
 
 // What the worker reports for a Tests run (see doctests.py).
 type TestReport = {
+  // The file failed while running (its traceback is the program's output),
+  // so there is no report.
+  skipped?: boolean
   attempted?: number
   failed?: number
   // `want`/`got` only for an example whose output didn't match (not one that raised).
@@ -1033,7 +1036,8 @@ function GlPythonWorkspace(props: GlPythonWorkspaceProps) {
       if (event.data.type === 'error') setRuntimeState((state) => state === 'loading' ? 'failed' : state)
       if (event.data.type === 'result' || event.data.type === 'error') { setOutput(event.data.output || currentTranslation.noOutput); setOutputErrorHint(event.data.type === 'error' ? event.data.errorHint ?? null : null); setGraphics(event.data.graphics ?? []); setGraphicsDismissed(false); setIsRunning(false) }
       if (event.data.type === 'input_request') { setInputValue(''); setInputRequest(event.data.prompt ?? '') }
-      if (event.data.type === 'test-result') {
+      if (event.data.type === 'test-result' && event.data.skipped) setIsTesting(false)
+      else if (event.data.type === 'test-result') {
         const id = ++replIdRef.current
         revealEntryRef.current = id
         setConsoleEntries((entries) => [...entries, { kind: 'tests', id, report: event.data as TestReport }])
@@ -1130,11 +1134,15 @@ function GlPythonWorkspace(props: GlPythonWorkspaceProps) {
       project: { mainFile: project.mainFile, files: sources },
     })
   }
-  // Runs the doctests of the file that would run (see doctests.py); the
-  // report replaces the output until the next Run.
+  // Tests start as Run does: an empty console and a fresh session from the
+  // current files - so the REPL afterwards has exactly the definitions just
+  // tested - then the doctests' report (see the worker's "test").
   const runTests = () => {
     if (!workerRef.current || isTesting) return
-    setIsTesting(true)
+    if (workspaceCapabilities.graphics && projectImportsGturtle(project)) onGraphicsOpenChange(true)
+    runStreamStartedRef.current = false
+    consoleAtBottomRef.current = true
+    setIsTesting(true); setOutput(t.runningOutput(project.mainFile)); setOutputErrorHint(null); setConsoleEntries([])
     workerRef.current.postMessage({
       type: 'test',
       project: {

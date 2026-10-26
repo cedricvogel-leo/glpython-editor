@@ -54,6 +54,7 @@ There is no unit test framework. The automated checks are `test:protocol` (plain
 
 Worker messages:
 - `run` → `result`/`error`; while it runs, `output` messages (`{id, text}`, `id` undefined for a program, the input's id for a REPL input) stream what was printed, at most 50 per 50 ms. The final message brings the whole output again.
+- `test` → first as `run` (`result`/`error`, a fresh REPL session from these files), then `test-result` (the doctests' report; `{skipped: true}` if the file failed)
 - `run-visual` → `trace-result` (`{trace, ast, output, graphics, error, errorMessage, truncated}`)
 - `repl` → `repl-result`
 - `run-visual-repl` (a doctest example) → `trace-result` with `rootPath`/`sources`, or `repl-result` if the input doesn't parse

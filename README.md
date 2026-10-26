@@ -143,9 +143,12 @@ browser. Texts: `copyChain`, `copyChainDone`, `copyChainFailed`,
 ### Tests (doctests)
 
 The **Tests** button (capability `tests`, a `test` command for editor-free
-hosts) runs the doctests in the docstrings of the file that would run, as
-`python -m doctest` does: the file is loaded as a module named after it, so an
-`if __name__ == "__main__":` block doesn't run. The output panel shows how many
+hosts) starts as **Run** does - an empty console and a fresh session from the
+current files, whose output shows first and whose definitions the REPL has
+afterwards - and then runs the doctests in the docstrings of the file that would
+run, as `python -m doctest` does: the file is loaded once more as a module named
+after it (its output there isn't shown again). If the file itself fails, its
+traceback is the answer and no report follows. The console then shows how many
 examples passed, then each failing example in doctest's own words (`Failed
 example:`, `Expected:`, `Got:` stay untranslated) with a button that visualizes
 that example step by step against the same definitions. If the example didn't
