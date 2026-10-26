@@ -960,6 +960,11 @@ function GlPythonWorkspace(props: GlPythonWorkspaceProps) {
   // Set at a stop, so the next worker's "ready" doesn't clear the console;
   // and whether the running program has printed anything yet (its first
   // output replaces the «… wird ausgeführt» line).
+  // A console entry a click asked for (a Tests report, a REPL input, the
+  // stop note): shown as soon as it is there, see the console's scroll effect.
+  const revealEntryRef = useRef<number | null>(null)
+  // Whether the console is scrolled to its end (set by its onScroll).
+  const consoleAtBottomRef = useRef(true)
   const keepConsoleOnReadyRef = useRef(false)
   const runStreamStartedRef = useRef(false)
   // Streamed output waiting to be shown: applied together every 40 ms rather
@@ -1029,7 +1034,9 @@ function GlPythonWorkspace(props: GlPythonWorkspaceProps) {
       if (event.data.type === 'result' || event.data.type === 'error') { setOutput(event.data.output || currentTranslation.noOutput); setOutputErrorHint(event.data.type === 'error' ? event.data.errorHint ?? null : null); setGraphics(event.data.graphics ?? []); setGraphicsDismissed(false); setIsRunning(false) }
       if (event.data.type === 'input_request') { setInputValue(''); setInputRequest(event.data.prompt ?? '') }
       if (event.data.type === 'test-result') {
-        setConsoleEntries((entries) => [...entries, { kind: 'tests', id: ++replIdRef.current, report: event.data as TestReport }])
+        const id = ++replIdRef.current
+        revealEntryRef.current = id
+        setConsoleEntries((entries) => [...entries, { kind: 'tests', id, report: event.data as TestReport }])
         setIsTesting(false)
       }
       if (event.data.type === 'repl-result') {
@@ -1101,6 +1108,7 @@ function GlPythonWorkspace(props: GlPythonWorkspaceProps) {
     if (!workerRef.current) return
     if (workspaceCapabilities.graphics && projectImportsGturtle(project)) onGraphicsOpenChange(true)
     runStreamStartedRef.current = false
+    consoleAtBottomRef.current = true
     setIsRunning(true); setOutput(t.runningOutput(project.mainFile)); setOutputErrorHint(null); setConsoleEntries([])
     workerRef.current.postMessage({
       type: 'run',
@@ -1164,7 +1172,7 @@ function GlPythonWorkspace(props: GlPythonWorkspaceProps) {
     setOutput((current) => current === t.runningOutput(project.mainFile) ? '' : current)
     setConsoleEntries((entries) => [
       ...entries.map((entry) => entry.kind === 'repl' ? { ...entry, stale: true, result: entry.result ?? { output: entry.live ?? '' }, live: undefined } : entry),
-      { kind: 'note' as const, id: ++replIdRef.current, text: t.stoppedNote ?? 'Stopped. Python was restarted.' },
+      { kind: 'note' as const, id: (revealEntryRef.current = ++replIdRef.current), text: t.stoppedNote ?? 'Stopped. Python was restarted.' },
     ])
   }
   // Reset: Python restarts too, and the console, the visualization and the
@@ -1194,6 +1202,7 @@ function GlPythonWorkspace(props: GlPythonWorkspaceProps) {
     if (!workerRef.current || !source.trim() || isRunning || isReplBusy) return
     if (visualTrace) exitVisualizer()
     const id = rememberReplInput(source)
+    revealEntryRef.current = id
     setConsoleEntries((entries) => [...entries, { kind: 'repl', id, source, result: null }])
     setIsReplBusy(true)
     workerRef.current.postMessage({ type: 'repl', id, source })
@@ -1222,11 +1231,21 @@ function GlPythonWorkspace(props: GlPythonWorkspaceProps) {
     }
   }
   // The console follows new output, unless the learner scrolled up to read
-  // something earlier.
-  const consoleAtBottomRef = useRef(true)
+  // something earlier - except for an entry a click asked for: it scrolls to
+  // that entry's start, so e.g. a second Tests report doesn't land out of
+  // view below the first one (P20). Only the console scrolls: scrollIntoView
+  // would move the course page around the embed too.
   useEffect(() => {
     const element = outputRef.current
-    if (element && consoleAtBottomRef.current) element.scrollTop = element.scrollHeight
+    if (!element) return
+    const entry = revealEntryRef.current === null ? null : element.querySelector(`[data-console-entry="${revealEntryRef.current}"]`)
+    if (entry) {
+      revealEntryRef.current = null
+      element.scrollTop += entry.getBoundingClientRect().top - element.getBoundingClientRect().top - 8
+      consoleAtBottomRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 24
+    } else if (consoleAtBottomRef.current) {
+      element.scrollTop = element.scrollHeight
+    }
   }, [consoleEntries, output])
   useEffect(() => {
     if (!command) return
@@ -2006,7 +2025,7 @@ function GlPythonWorkspace(props: GlPythonWorkspaceProps) {
   const visualizerWarningNode = <>{isVisualizing && visualTrace?.error && !errorTraceStep && <div className="visualizer-warning"><AlertTriangle size={14} />{t.visualizerError(visualTrace.error)}</div>}</>
   const editorTabsNode = <div className="editor-tabs">{openFiles.map((path) => { const file = project.files[path]; return <button className={`editor-tab ${activeFile === path ? 'active' : ''}`} key={path} onClick={() => onOpenFile(path)}><span className={`tab-file-icon ${file.kind === 'python' ? 'python' : 'notes'}`}>{file.kind === 'python' ? <FileCode2 size={14} /> : <BookOpen size={14} />}</span><span>{file.path}</span>{workspaceCapabilities.closeFileTabs && <span className="tab-close" role="button" aria-label={t.closeFile(file.path)} onClick={(event) => { event.stopPropagation(); onCloseFile(path) }}><X size={13} /></span>}</button> })}</div>
   const editorWrapNode = <div className="editor-wrap">{isVisualizing ? <div className={`visualizer-view${animationsEnabled ? ' visualizer-animated' : ''}`} ref={visualizerScrollRef}><div className="visualizer-canvas" ref={visualizerCanvasRef}><Frame frameId={0} path={visualRootPath ?? activeFile} scope={{ kind: 'module' }} openFrames={framesForRender} nodeIndexByFile={astIndexByFile} visualSources={visualSources} trace={visualTrace?.trace ?? []} uptoStep={currentTraceStep?.step ?? -1} currentStep={currentTraceStep} nextStep={nextTraceStep} monaco={monaco} valueKindLabels={valueKindLabels} hiddenRanges={visualTrace?.hidden ?? {}} declareTarget={nextStepDeclareTarget} pendingCallLocals={pendingCallLocals} errorStep={isAtErrorStep ? errorTraceStep : null} collapsedCalls={collapsedCalls} collapsedCallsLabel={collapsedCallsLabel} substitutionMode={substitutionMode} boxHint={t.visualizerBoxHint ?? 'The box shows which return is executed.'} insideBox={false} activeHost={activeHost} errorHost={errorHost} finalNote={finalNote} errorHint={isAtErrorStep && visualTrace?.errorHint && t.errorHint?.(visualTrace.errorHint, 'other') ? <ErrorHintNote hint={visualTrace.errorHint} t={t} /> : null} />{animationsEnabled && closingBoxes.length > 0 && <div className="visualizer-closing-boxes">{closingBoxes.map((box) => <div key={box.id} className="visual-closing-box-ghost" style={{ left: box.left, top: box.top, width: box.width, height: box.height }} dangerouslySetInnerHTML={{ __html: box.html }} />)}</div>}{(connectorPaths.length > 0 || flights.length > 0) && <svg className="visualizer-connectors"><defs><marker id="visualizer-arrowhead" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" /></marker></defs>{connectorPaths.map((connector, index) => <path key={index} d={connector.d} markerEnd="url(#visualizer-arrowhead)" />)}{animationsEnabled && flights.map((flight) => <path key={`flight-${flight.id}`} className="visual-flight-arrow" d={flight.d} markerEnd="url(#visualizer-arrowhead)" />)}</svg>}{animationsEnabled && flights.length > 0 && <div className="visualizer-flights">{flights.map((flight) => <span key={flight.id} className="visual-flight-value" style={{ offsetPath: `path('${flight.d}')` }}>{flight.value}</span>)}</div>}</div></div> : <Editor key="normal-editor" height="100%" language={selectedFile.kind === 'python' ? GLPYTHON_PYTHON : 'markdown'} theme={GLPYTHON_THEME} beforeMount={(instance) => { registerGlpythonPython(instance); defineGlpythonTheme(instance) }} value={selectedFile.code} onChange={updateCode} options={{ minimap: { enabled: false }, bracketPairColorization: { enabled: false }, fontSize: 15, lineHeight: 24, padding: { top: 22 }, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', scrollBeyondLastLine: false, smoothScrolling: true, automaticLayout: true, tabSize: 4, insertSpaces: true, detectIndentation: false, placeholder: t.editorPlaceholder ?? 'Type code here' }} />}</div>
-  const consoleNode = <>{!hideOutputPanel && <section className="output-panel"><div className="output-heading"><div className="output-title"><SquareTerminal size={16} /><span>{t.output}</span>{runtimeState !== 'ready' && <span className={`runtime-badge${runtimeState === 'failed' ? ' runtime-badge--failed' : ''}`}><span className="pulse" /> {t.pyodideRuntime}</span>}</div>{Object.keys(project.files).length > 1 && <span className="output-hint">{t.runsFile(project.mainFile)}</span>}</div><div className="console" ref={outputRef} role="log" onScroll={(event) => { const element = event.currentTarget; consoleAtBottomRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 24 }}>{isVisualizing ? <pre>{isAtErrorStep ? <>{visualStdout && !visualStdout.endsWith('\n') ? `${visualStdout}\n` : visualStdout}<span className="output-error">{visualTrace?.error}</span></> : visualStdout || t.noOutput}</pre> : <><pre>{output}<ErrorHintNote hint={outputErrorHint} t={t} /></pre>{consoleEntries.map((entry) => entry.kind === 'tests' ? <TestReportView key={entry.id} report={entry.report} t={t} onVisualizeExample={workspaceCapabilities.visualization ? visualizeExample : null} /> : entry.kind === 'note' ? <p key={entry.id} className="console-note" role="note">{entry.text}</p> : <pre key={entry.id}><ReplTranscriptEntry entry={entry} definitionHint={t.replDefinitionHint ?? 'Definitions belong in the file.'} t={t} onVisualize={workspaceCapabilities.visualization && entry.result && !entry.result.unparsed && !entry.stale ? () => visualizeReplEntry(entry.id) : undefined} busy={isBusy} /></pre>)}</>}</div>{workspaceCapabilities.repl && <form className="repl-line" onSubmit={(event) => { event.preventDefault(); submitRepl() }}><span className="repl-prompt" aria-hidden="true">&gt;&gt;&gt;</span><input className="repl-input" value={replInput} onChange={(event) => { setReplInput(event.target.value); setReplHistoryIndex(null) }} onKeyDown={handleReplKeyDown} aria-label={t.replInputLabel ?? 'Python input'} spellCheck={false} autoComplete="off" autoCapitalize="off" /></form>}</section>}</>
+  const consoleNode = <>{!hideOutputPanel && <section className="output-panel"><div className="output-heading"><div className="output-title"><SquareTerminal size={16} /><span>{t.output}</span>{runtimeState !== 'ready' && <span className={`runtime-badge${runtimeState === 'failed' ? ' runtime-badge--failed' : ''}`}><span className="pulse" /> {t.pyodideRuntime}</span>}</div>{Object.keys(project.files).length > 1 && <span className="output-hint">{t.runsFile(project.mainFile)}</span>}</div><div className="console" ref={outputRef} role="log" onScroll={(event) => { const element = event.currentTarget; consoleAtBottomRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 24 }}>{isVisualizing ? <pre>{isAtErrorStep ? <>{visualStdout && !visualStdout.endsWith('\n') ? `${visualStdout}\n` : visualStdout}<span className="output-error">{visualTrace?.error}</span></> : visualStdout || t.noOutput}</pre> : <><pre>{output}<ErrorHintNote hint={outputErrorHint} t={t} /></pre>{consoleEntries.map((entry) => entry.kind === 'tests' ? <div key={entry.id} data-console-entry={entry.id}><TestReportView report={entry.report} t={t} onVisualizeExample={workspaceCapabilities.visualization ? visualizeExample : null} /></div> : entry.kind === 'note' ? <p key={entry.id} className="console-note" role="note" data-console-entry={entry.id}>{entry.text}</p> : <pre key={entry.id} data-console-entry={entry.id}><ReplTranscriptEntry entry={entry} definitionHint={t.replDefinitionHint ?? 'Definitions belong in the file.'} t={t} onVisualize={workspaceCapabilities.visualization && entry.result && !entry.result.unparsed && !entry.stale ? () => visualizeReplEntry(entry.id) : undefined} busy={isBusy} /></pre>)}</>}</div>{workspaceCapabilities.repl && <form className="repl-line" onSubmit={(event) => { event.preventDefault(); submitRepl() }}><span className="repl-prompt" aria-hidden="true">&gt;&gt;&gt;</span><input className="repl-input" value={replInput} onChange={(event) => { setReplInput(event.target.value); setReplHistoryIndex(null) }} onKeyDown={handleReplKeyDown} aria-label={t.replInputLabel ?? 'Python input'} spellCheck={false} autoComplete="off" autoCapitalize="off" /></form>}</section>}</>
   // In the stacked layout the graphics show only while the program draws -
   // for a visualization: if it draws at all, so the panel doesn't appear in
   // the middle of stepping. Its ✕ hides it until the next drawing.

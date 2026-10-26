@@ -26,6 +26,7 @@
     "preview:embed": "vite preview --config vite.embed.config.ts",
     "test:protocol": "npm run build && node scripts/check-embed-protocol.mjs",
     "test:hints": "node scripts/check-error-hints.mjs",
+    "test:console": "node scripts/check-console-browser.mjs",
     "test:runtime": "python3 -B scripts/check-runtime-columns.py && python3 -B scripts/check-runtime-values.py && python3 -B scripts/check-runtime-doctests.py && python3 -B scripts/check-runtime-calls.py && python3 -B scripts/check-runtime-hints.py && python3 -B scripts/check-runtime-fidelity.py && python3 -B scripts/check-runtime-replay.py && python3 -B scripts/check-runtime-imports.py",
     "prepare": "npm run build"
   },
@@ -43,6 +44,7 @@
     "@vitejs/plugin-react": "^6.1.1",
     "lucide-react": "^1.47.0",
     "oxlint": "^1.81.0",
+    "playwright-core": "^1.48.2",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "typescript": "~6.0.2",
