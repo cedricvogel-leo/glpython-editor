@@ -179,7 +179,7 @@ function germanErrorHint(hint: ErrorHint, context: ErrorHintContext): string | n
     case 'too-many-arguments':
       return `\`${hint.function}\` erwartet ${hint.expected === 0 ? 'keine Argumente' : hint.expected === 1 ? '1 Argument' : `${hint.expected} Argumente`}, erhalten hat es ${hint.given}.`
     case 'none-operand':
-      return 'Ein Wert ist `None`. Fehlt in einer Funktion das `return` – oder gibt sie ihr Ergebnis mit `print` aus?'
+      return 'Ein Wert ist `None`. Fehlt in einer Funktion das `return`?'
     case 'text-plus-number':
       return 'Text und Zahl lassen sich nicht mit `+` verbinden.'
     case 'zero-division':
@@ -206,7 +206,7 @@ function englishErrorHint(hint: ErrorHint, context: ErrorHintContext): string | 
     case 'too-many-arguments':
       return `\`${hint.function}\` expects ${hint.expected === 0 ? 'no arguments' : hint.expected === 1 ? '1 argument' : `${hint.expected} arguments`} but got ${hint.given}.`
     case 'none-operand':
-      return 'A value is `None`. Is a function missing its `return` – or does it output its result with `print`?'
+      return 'A value is `None`. Is a function missing its `return`?'
     case 'text-plus-number':
       return "Text and a number can't be joined with `+`."
     case 'zero-division':
