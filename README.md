@@ -417,3 +417,10 @@ turtle graphics do not require the synchronous input channel.
   to `dist/style.css` by the `build` script and exposed via the
   `glpython-editor/style.css` export; consuming shells must import it
   explicitly.
+
+## Lizenz / License
+
+MIT – see [LICENSE](LICENSE). Third-party code it contains or bundles (Monaco
+Editor's Python definition, coi-serviceworker, and the libraries bundled into
+the embed) is listed with its notices in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
