@@ -1,8 +1,9 @@
-// Browser check of the console (P20): Tests, then an edit, then Tests again
-// - without ▶ Run in between - runs the edited code, and its report is in
-// view, also when the learner scrolled up to read the first report. Before
-// the fix the second report was appended out of view below the first one,
-// so «Tests» looked as if it didn't react.
+// Browser check of the console: Tests, then an edit, then Tests again -
+// without ▶ Run in between - runs the edited code, and its report is in
+// view, also when the learner scrolled up to read the first report (P20:
+// the second report used to land out of view below the first one). Tests
+// starts as Run does, so the console then holds only the new report, and
+// the REPL has the definitions just tested (not the ones of the last Run).
 //
 // Drives the built embed (dist-embed/, from npm run build:embed) in Chrome
 // through its protocol, as the LiaScript macro does; Pyodide comes from its
@@ -57,13 +58,16 @@ try {
     const summaries = frame.locator('.test-summary')
     await page.evaluate((source) => window.send('test', source), first)
     await summaries.first().waitFor({ timeout: 60000 })
+    const firstSeen = await summaries.allInnerTexts()
     // The learner reads the report from its top.
     await frame.locator('.console').evaluate((element) => { element.scrollTop = 0; element.dispatchEvent(new Event('scroll')) })
     await page.evaluate((source) => window.send('test', source), second)
-    await summaries.nth(1).waitFor({ timeout: 60000 })
+    // The new report: its summary appears (before the fix: as a second one).
+    await page.frames()[1].waitForFunction((want) => [...document.querySelectorAll('.test-summary')].some((summary) => summary.textContent === want), secondSummary, { timeout: 60000 })
     await page.waitForTimeout(300)
     try {
-      assert.deepEqual(await summaries.allInnerTexts(), [firstSummary, secondSummary], `${label}: the second run tests the edited code`)
+      assert.deepEqual(firstSeen, [firstSummary], `${label}: the first run's report`)
+      assert.deepEqual(await summaries.allInnerTexts(), [secondSummary], `${label}: the second run tests the edited code, in an emptied console`)
       const inView = await frame.locator('.console').evaluate((element) => {
         const view = element.getBoundingClientRect()
         const summary = [...element.querySelectorAll('.test-summary')].at(-1).getBoundingClientRect()
@@ -77,6 +81,38 @@ try {
     }
     await page.close()
   }
+  // Edit → Tests → the REPL uses the new definition, without ▶ Run.
+  const page = await browser.newPage({ viewport: { width: 800, height: 950 } })
+  await page.route(`${origin}/check-console.html`, (route) => route.fulfill({ contentType: 'text/html', body: harness }))
+  await page.goto(`${origin}/check-console.html`)
+  await page.waitForFunction(() => window.ready, null, { timeout: 120000 })
+  const frame = page.frameLocator('#embed')
+  const repl = frame.getByRole('textbox', { name: 'Python-Eingabe' })
+  const ask = async (input) => {
+    const count = await frame.locator('.repl-value, .repl-entry .output-error').count()
+    await repl.fill(input)
+    await repl.press('Enter')
+    await frame.locator('.repl-value, .repl-entry .output-error').nth(count).waitFor({ timeout: 30000 })
+    return frame.locator('.repl-value, .repl-entry .output-error').nth(count).innerText()
+  }
+  const version = (value) => `def f():\n    """\n    >>> f()\n    ${value}\n    """\n    return ${value}\n`
+  await page.evaluate((source) => window.send('test', source), version(1))
+  await frame.locator('.test-summary').waitFor({ timeout: 60000 })
+  const before = await ask('f()')
+  await page.evaluate((source) => window.send('test', source), version(2))
+  // Tests empties the console (before: the REPL entry stayed).
+  await frame.locator('.repl-entry').waitFor({ state: 'detached', timeout: 15000 }).catch(() => {})
+  await frame.locator('.test-summary').last().waitFor({ timeout: 60000 })
+  await page.waitForTimeout(500)
+  const after = await ask('f()')
+  try {
+    assert.deepEqual([before, after], ['1', '2'], 'edit → Tests → the REPL uses the new definition')
+    console.log('Tests → REPL → edit → Tests → REPL: ok')
+  } catch (error) {
+    failed += 1
+    console.error(error.message)
+  }
+  await page.close()
 } finally {
   await browser.close()
   stopServer()

@@ -195,6 +195,42 @@ function outputStream(id) {
   }
 }
 
+// Run: mounts the project's files and runs its main file in a fresh REPL
+// namespace (see _glpython_run_project), streaming what it prints, and
+// answers "result" or "error". A REPL input's replay starts from here (see
+// replayReplEntry). Says whether the program ran through.
+async function runProgram(project) {
+  let runOutput = ''
+  try {
+    const pyodide = await getPyodide()
+    await mountProjectFiles(pyodide, project.files)
+    lastRunFiles = project.files
+    lastRunMainFile = project.mainFile
+    const stream = outputStream(undefined)
+    pyodide.setStdout({ batched: (text) => { runOutput += `${text}\n`; stream(`${text}\n`) } })
+    pyodide.setStderr({ batched: (text) => { runOutput += `${text}\n`; stream(`${text}\n`) } })
+    hasRun = true
+    lastRunOutcome = null
+    replLog = []
+    callPython(pyodide, '_glpython_run_project', `/${project.mainFile}`)
+    lastRunOutcome = runOutput
+    const graphicsJson = callPython(pyodide, '_glpython_graphics_json')
+    self.postMessage({ type: 'result', output: runOutput.trim(), graphics: JSON.parse(String(graphicsJson)) })
+    return true
+  } catch (error) {
+    // What the program printed, then Python's traceback as CPython shows
+    // it, plus the hint for its error (see _glpython_traceback_text).
+    // Pyodide's own error text only if the program never ran.
+    let report = null
+    try { report = JSON.parse(String(callPython(await getPyodide(), '_glpython_take_error_report'))) } catch {}
+    if (report) lastRunOutcome = `${runOutput}${report.traceback}`
+    self.postMessage(report
+      ? { type: 'error', output: `${runOutput}${report.traceback}`.trimEnd(), errorHint: report.errorHint }
+      : { type: 'error', output: String(error), errorHint: null })
+    return false
+  }
+}
+
 self.onmessage = async (event) => {
   if (event.data.type === 'init-input-channel') {
     inputControl = new Int32Array(event.data.buffer, 0, 2)
@@ -203,49 +239,30 @@ self.onmessage = async (event) => {
   }
 
   if (event.data.type === 'run') {
-    let runOutput = ''
-    try {
-      const pyodide = await getPyodide()
-      await mountProjectFiles(pyodide, event.data.project.files)
-      lastRunFiles = event.data.project.files
-      lastRunMainFile = event.data.project.mainFile
-      const stream = outputStream(undefined)
-      pyodide.setStdout({ batched: (text) => { runOutput += `${text}\n`; stream(`${text}\n`) } })
-      pyodide.setStderr({ batched: (text) => { runOutput += `${text}\n`; stream(`${text}\n`) } })
-      hasRun = true
-      lastRunOutcome = null
-      replLog = []
-      callPython(pyodide, '_glpython_run_project', `/${event.data.project.mainFile}`)
-      lastRunOutcome = runOutput
-      const graphicsJson = callPython(pyodide, '_glpython_graphics_json')
-      self.postMessage({ type: 'result', output: runOutput.trim(), graphics: JSON.parse(String(graphicsJson)) })
-    } catch (error) {
-      // What the program printed, then Python's traceback as CPython shows
-      // it, plus the hint for its error (see _glpython_traceback_text).
-      // Pyodide's own error text only if the program never ran.
-      let report = null
-      try { report = JSON.parse(String(callPython(await getPyodide(), '_glpython_take_error_report'))) } catch {}
-      if (report) lastRunOutcome = `${runOutput}${report.traceback}`
-      self.postMessage(report
-        ? { type: 'error', output: `${runOutput}${report.traceback}`.trimEnd(), errorHint: report.errorHint }
-        : { type: 'error', output: String(error), errorHint: null })
-    }
+    await runProgram(event.data.project)
     return
   }
 
+  // Tests start as Run does - a fresh session from the current files, whose
+  // definitions the REPL then has - and then run the doctests. If the file
+  // itself fails, its traceback (from the Run part) is the answer, and no
+  // report repeats it ("skipped"). What the file printed shows once, from the
+  // Run part; the report leaves it out.
   if (event.data.type === 'test') {
-    let output = ''
+    if (!await runProgram(event.data.project)) {
+      self.postMessage({ type: 'test-result', skipped: true })
+      return
+    }
     try {
       const pyodide = await getPyodide()
-      await mountProjectFiles(pyodide, event.data.project.files)
       lastTestFiles = event.data.project.files
       lastTestMainFile = event.data.project.mainFile
-      pyodide.setStdout({ batched: (text) => { output += `${text}\n` } })
-      pyodide.setStderr({ batched: (text) => { output += `${text}\n` } })
+      pyodide.setStdout({ batched: () => {} })
+      pyodide.setStderr({ batched: () => {} })
       const result = JSON.parse(String(callPython(pyodide, '_glpython_run_doctests', `/${event.data.project.mainFile}`)))
-      self.postMessage({ type: 'test-result', output, ...result })
+      self.postMessage({ type: 'test-result', ...result })
     } catch (error) {
-      self.postMessage({ type: 'test-result', output, error: String(error) })
+      self.postMessage({ type: 'test-result', error: String(error) })
     }
     return
   }
