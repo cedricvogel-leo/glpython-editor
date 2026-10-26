@@ -1545,7 +1545,9 @@ def _glpython_trace_program(main_path, sources, fill_scope, report_value=False):
       if main_tree is None:
         raise SyntaxError(f"could not parse {main_path}")
       if report_value and len(main_tree.body) == 1 and isinstance(main_tree.body[0], ast.Expr):
-        value = _glpython_repl_value(_glpython_exec_stmt(main_tree.body[0], _glpython_module_scope))
+        # As the REPL (_glpython_repl): no value for None.
+        result = _glpython_exec_stmt(main_tree.body[0], _glpython_module_scope)
+        value = None if result is None else _glpython_repl_value(result)
       else:
         _glpython_exec_stmts(main_tree.body, _glpython_module_scope)
     except _GlpythonTraceLimit:

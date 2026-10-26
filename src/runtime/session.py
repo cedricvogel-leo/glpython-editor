@@ -115,12 +115,14 @@ def _glpython_graphics_json():
   return json.dumps(gturtle.commands)
 
 # Runs one REPL input in the namespace of the last Run (or in `namespace`,
-# see the replay below). A single expression reports its value - including
-# None, which the UI shows on purpose (every call evaluates to a value) -
-# while statements report nothing. Definitions are allowed, but flagged so
+# see the replay below). A single expression reports its value, except None,
+# which CPython's REPL doesn't show either (sys.displayhook skips it: a call
+# of a function without return, print(...), help(...) show only what they
+# print); statements report nothing. Definitions are allowed, but flagged so
 # the UI can point out that they belong in the file. Errors report only the
 # traceback's last line; an input that doesn't compile is flagged, as it has
-# nothing to visualize.
+# nothing to visualize - and so is a call of help or dir, which only prints
+# documentation or names.
 def _glpython_repl(source, namespace=None):
   import ast
   if namespace is None:
@@ -135,7 +137,11 @@ def _glpython_repl(source, namespace=None):
     return json.dumps({"error": _glpython_error_message(error), "errorHint": _glpython_error_hint(error), "unparsed": True})
   try:
     if mode == "eval":
-      return json.dumps(_glpython_repl_value(eval(code, namespace)))
+      value = eval(code, namespace)
+      result = {"hint": None} if value is None else _glpython_repl_value(value)
+      if _glpython_repl_is_lookup(tree.body[0].value, namespace):
+        result["untraced"] = True
+      return json.dumps(result)
     exec(code, namespace)
     defines = any(isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) for node in tree.body)
     return json.dumps({"hint": "definition" if defines else None})
@@ -146,7 +152,16 @@ def _glpython_repl_value(value):
   text = repr(value)
   if len(text) > _GLPYTHON_REPL_MAX_REPR:
     text = text[:_GLPYTHON_REPL_MAX_REPR] + "…"
-  return {"value": text, "isNone": value is None}
+  return {"value": text}
+
+# Whether an expression is a call of the builtin help or dir (not a function
+# of the learner's that happens to have that name).
+def _glpython_repl_is_lookup(expression, namespace):
+  import ast
+  if not (isinstance(expression, ast.Call) and isinstance(expression.func, ast.Name) and expression.func.id in ("help", "dir")):
+    return False
+  builtin = getattr(builtins, expression.func.id, None)
+  return builtin is not None and namespace.get(expression.func.id, builtin) is builtin
 
 # Visualizing an earlier REPL input replays the session up to it instead of
 # storing Python's state: the worker runs the file as it was at the Run

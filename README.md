@@ -199,7 +199,9 @@ as Reset does, with `{ id, type: 'reset' }`), and learn when Python is busy thro
 
 Below the console, a `>>>` input line runs Python in the namespace of the
 last Run, so learners can call the file's functions directly. An expression
-shows its value (`None` too, greyed out); a statement such as `a = 5` shows
+shows its value, except `None`, as in CPython's REPL (so a call of a function
+without `return`, `print(...)` or `help(...)` shows only what it printed); a
+statement such as `a = 5` shows
 nothing; a `def` runs but adds the hint `replDefinitionHint`; an error shows
 Python's last traceback line. Run starts a fresh namespace and clears the
 transcript, while arrow up/down still recalls earlier inputs. Every entry of
