@@ -247,7 +247,6 @@
 .repl-entry-visualize:disabled { color: var(--glp-text-muted); cursor: not-allowed; }
 .repl-note { color: var(--glp-text-muted); font: italic 13px/1.5 var(--glp-font-ui); white-space: normal; }
 .repl-value { color: var(--glp-text); }
-.repl-value--none { color: var(--glp-text-muted); }
 .repl-hint { color: var(--glp-warning); font-style: italic; }
 
 .repl-line { display: flex; align-items: center; gap: 8px; padding: 12px; background: var(--glp-surface); border-top: 1px solid var(--glp-border); }
