@@ -369,14 +369,14 @@ and monospace fonts, no web fonts). A host can override any of them:
 | Variable | Role |
 |---|---|
 | `--glp-bg` | panel background |
-| `--glp-surface` | code in the visualizer, output, REPL; coverage after Tests and its marks |
+| `--glp-surface` | code in the visualizer, output, REPL; coverage after Tests |
 | `--glp-border` | decorative borders and separator lines |
-| `--glp-border-control` | borders of controls, call boxes in box mode; the coverage marks' gutter bar |
+| `--glp-border-control` | borders of controls, call boxes in box mode; coverage after Tests (its bar) |
 | `--glp-text`, `--glp-text-muted` | text and code; line numbers, step counter, secondary info, connector lines |
 | `--glp-accent`, `--glp-on-accent` | active mode, scrubber, focus, primary button; text on it |
 | `--glp-current`, `--glp-current-outline` | current subexpression and new value, current line; next step (dashed) |
 | `--glp-error`, `--glp-error-bg` | errors, failing tests, «Erhalten · Erwartet» |
-| `--glp-warning`, `--glp-warning-bg` | hints |
+| `--glp-warning`, `--glp-warning-bg` | hints; the coverage marks in the editor |
 | `--glp-success` | passed tests, runtime ready |
 | `--glp-syntax-keyword`, `-string`, `-number`, `-comment` | syntax colours (names, operators, brackets use `--glp-text`) |
 | `--glp-font-code`, `--glp-font-ui`, `--glp-radius` | fonts and corner radius |
