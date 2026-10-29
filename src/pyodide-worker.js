@@ -247,7 +247,8 @@ self.onmessage = async (event) => {
   // definitions the REPL then has - and then run the doctests. If the file
   // itself fails, its traceback (from the Run part) is the answer, and no
   // report repeats it ("skipped"). What the file printed shows once, from the
-  // Run part; the report leaves it out.
+  // Run part; the report leaves it out. With "coverage", the report also has
+  // what no example executed (see doctests.py).
   if (event.data.type === 'test') {
     if (!await runProgram(event.data.project)) {
       self.postMessage({ type: 'test-result', skipped: true })
@@ -259,7 +260,7 @@ self.onmessage = async (event) => {
       lastTestMainFile = event.data.project.mainFile
       pyodide.setStdout({ batched: () => {} })
       pyodide.setStderr({ batched: () => {} })
-      const result = JSON.parse(String(callPython(pyodide, '_glpython_run_doctests', `/${event.data.project.mainFile}`)))
+      const result = JSON.parse(String(callPython(pyodide, '_glpython_run_doctests', `/${event.data.project.mainFile}`, event.data.coverage === true)))
       self.postMessage({ type: 'test-result', ...result })
     } catch (error) {
       self.postMessage({ type: 'test-result', error: String(error) })

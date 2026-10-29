@@ -34,7 +34,7 @@ jobs:
       - run: npm run test:hints
       # The runtime under CPython: the visualizer's columns, docstrings,
       # condition comments, readable types and argument checks, the doctest
-      # runner, and which errors get a hint.
+      # runner and its coverage, and which errors get a hint.
       - run: npm run test:runtime
       # The console in Chrome (on the runner) with Pyodide from its CDN,
       # driving the embed built above: Tests → edit → Tests shows the new

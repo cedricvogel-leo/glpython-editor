@@ -4,6 +4,9 @@
 // the second report used to land out of view below the first one). Tests
 // starts as Run does, so the console then holds only the new report, and
 // the REPL has the definitions just tested (not the ones of the last Run).
+// With "coverage" in features (P23), a report that all passed lists the
+// lines no example executed - which also checks that Pyodide's Python has
+// sys.monitoring - and without it, or with a failing example, it doesn't.
 //
 // Drives the built embed (dist-embed/, from npm run build:embed) in Chrome
 // through its protocol, as the LiaScript macro does; Pyodide comes from its
@@ -21,7 +24,8 @@ const stopServer = () => server.kill()
 process.on('exit', stopServer)
 
 // The parent page, served on the embed's own origin: it loads the embed and
-// passes messages on, version 4.
+// passes messages on, version 4. Its own query (e.g. "?features=…") goes on
+// to the embed.
 const harness = `<!doctype html><meta charset="utf-8"><body style="margin:0">
 <iframe id="embed" style="width:760px;height:900px;border:0"></iframe>
 <script>
@@ -29,7 +33,7 @@ const harness = `<!doctype html><meta charset="utf-8"><body style="margin:0">
   window.ready = false
   window.send = (type, source) => iframe.contentWindow.postMessage({ type: 'glpython:' + type, version: 4, source, mode: 'eval' }, location.origin)
   addEventListener('message', (event) => { if (event.data?.type === 'glpython:ready') window.ready = true })
-  iframe.src = './index.html?parentOrigin=' + encodeURIComponent(location.origin) + '&mode=eval&lang=de'
+  iframe.src = './index.html?parentOrigin=' + encodeURIComponent(location.origin) + '&mode=eval&lang=de' + location.search.replace('?', '&')
 </script>`
 
 const program = (examples) => `def schnitt(a, b):\n    """\n${examples.map(([call, want]) => `    >>> ${call}\n    ${want}\n`).join('')}    """\n    return (a + b) / 2\n`
@@ -113,6 +117,35 @@ try {
     console.error(error.message)
   }
   await page.close()
+
+  // Coverage after Tests.
+  const bewertung = `def bewertung(note):\n    """\n    >>> bewertung(5)\n    'genügend'\n    >>> bewertung(6)\n    'genügend'\n    """\n    if note >= 4:\n        return "genügend"\n    else:\n        return "ungenügend"\n`
+  const istGenuegend = `def ist_genuegend(note):\n    """\n    >>> ist_genuegend(5.5)\n    True\n    >>> ist_genuegend(3.5)\n    False\n    """\n    return note >= 4\n`
+  const bewertungFailing = bewertung.replace(">>> bewertung(6)\n    'genügend'", ">>> bewertung(6)\n    'gut'")
+  for (const [label, query, source, expected] of [
+    ['coverage: a line no example ran', '?features=run,repl,visualize,tests,coverage', bewertung, 'Von keinem Beispiel ausgeführt:\nZeile 11: return "ungenügend"'],
+    ['coverage: every line ran', '?features=run,repl,visualize,tests,coverage', istGenuegend, 'Jede Zeile der Funktionen wurde von mindestens einem Beispiel ausgeführt. Ob die Beispiele auch die Grenzfälle prüfen, zeigt das nicht.'],
+    ['coverage: not with a failing example', '?features=run,repl,visualize,tests,coverage', bewertungFailing, null],
+    ['coverage: not without it in features', '?features=run,repl,visualize,tests', bewertung, null],
+    ['coverage: not without features', '', bewertung, null],
+  ]) {
+    const page = await browser.newPage({ viewport: { width: 800, height: 950 } })
+    await page.route((url) => url.pathname === '/check-console.html', (route) => route.fulfill({ contentType: 'text/html', body: harness }))
+    await page.goto(`${origin}/check-console.html${query}`)
+    await page.waitForFunction(() => window.ready, null, { timeout: 120000 })
+    const frame = page.frameLocator('#embed')
+    await page.evaluate((source) => window.send('test', source), source)
+    await frame.locator('.test-summary').waitFor({ timeout: 60000 })
+    try {
+      const coverage = (await frame.locator('.test-coverage').allInnerTexts()).map((text) => text.replace(/\n+/g, '\n'))
+      assert.deepEqual(coverage, expected === null ? [] : [expected], label)
+      console.log(`${label}: ok`)
+    } catch (error) {
+      failed += 1
+      console.error(error.message)
+    }
+    await page.close()
+  }
 } finally {
   await browser.close()
   stopServer()

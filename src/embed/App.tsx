@@ -38,12 +38,14 @@ function createEmbedProject(source: string, files?: GlPythonFile[], mainFile?: s
 // LiaScript block's macro option: "?visualizer=box".
 // Optional "?features=run,repl,visualize,…" from the macro's features=
 // option: which of the embed's own parts to show (here: the REPL, the
-// visualizer and the → chain export). Without it, everything shows.
-const features = (() => {
+// visualizer and the → chain export). Without it, everything shows - except
+// "coverage" (after Tests, what no example executed), which a course switches
+// on explicitly.
+const featureList = (() => {
   const list = new URLSearchParams(window.location.search).get('features')
-  const enabled = list === null ? null : new Set(list.split(',').map((feature) => feature.trim()))
-  return (feature: string) => enabled === null || enabled.has(feature)
+  return list === null ? null : new Set(list.split(',').map((feature) => feature.trim()))
 })()
+const features = (feature: string) => featureList === null || featureList.has(feature)
 
 // "?size=large" (the macro's large option): bigger code, and with
 // "&visualizerHeight=600" the visualizer at least that many pixels tall (the
@@ -201,6 +203,7 @@ export function App() {
           graphics: mode === 'turtle',
           repl: mode === 'eval' && features('repl'),
           export: features('export'),
+          coverage: featureList?.has('coverage') ?? false,
           emptyOutput: mode !== 'visual',
         }}
       />
