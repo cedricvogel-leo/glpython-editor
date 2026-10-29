@@ -13,7 +13,7 @@ npm run build          # tsc -b && vite build && copy src/style.css -> dist/ (li
 npm run dev            # vite build --watch, for use with npm link/yalc in a host shell
 npm run lint           # oxlint
 npm run test:protocol  # builds the library, then runs scripts/check-embed-protocol.mjs against dist/
-npm run test:runtime   # the runtime under CPython: scripts/check-runtime-{columns,values,doctests,calls,hints,fidelity,replay}.py
+npm run test:runtime   # the runtime under CPython: scripts/check-runtime-{columns,values,doctests,coverage,calls,hints,fidelity,replay,…}.py
 npm run test:hints     # the error hints' wording (de/en) against the built dist/ (run a build first)
 npm run test:console   # the console in Chrome with Pyodide, against dist-embed/ (run build:embed first)
 npm run build:embed    # builds the iframe app + demo page into dist-embed/
@@ -56,7 +56,7 @@ There is no unit test framework. The automated checks are `test:protocol` (plain
 
 Worker messages:
 - `run` → `result`/`error`; while it runs, `output` messages (`{id, text}`, `id` undefined for a program, the input's id for a REPL input) stream what was printed, at most 50 per 50 ms. The final message brings the whole output again.
-- `test` → first as `run` (`result`/`error`, a fresh REPL session from these files), then `test-result` (the doctests' report; `{skipped: true}` if the file failed)
+- `test` → first as `run` (`result`/`error`, a fresh REPL session from these files), then `test-result` (the doctests' report; `{skipped: true}` if the file failed). With `coverage: true` the report has `uncovered` (`doctests.py` records the lines with `sys.monitoring` during the examples only; `check-runtime-coverage.py` compares with Python's `trace`); the UI shows it only when all examples pass.
 - `run-visual` → `trace-result` (`{trace, ast, output, graphics, error, errorMessage, truncated}`)
 - `repl` → `repl-result`
 - `run-visual-repl` (a doctest example) → `trace-result` with `rootPath`/`sources`, or `repl-result` if the input doesn't parse

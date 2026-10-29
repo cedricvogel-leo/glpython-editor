@@ -309,6 +309,17 @@
 .error-hint code { font: 600 1em var(--glp-font-code); }
 .visual-error-hint { padding: 0 8px 4px; }
 .visual-error-hint .error-hint { margin: 0; }
+/* Coverage after Tests: neutral, neither a success nor a warning (covered
+   code can still be wrong). */
+.test-coverage { margin: 0 0 8px; padding: 6px 10px; color: var(--glp-text); background: var(--glp-surface); border-left: 3px solid var(--glp-border-control); border-radius: var(--glp-radius); font: 13px/1.5 var(--glp-font-ui); }
+.test-coverage-heading { margin: 0 0 2px; }
+.test-coverage ul { margin: 0; padding: 0; list-style: none; }
+.test-coverage code { font: 13px/1.5 var(--glp-font-code); }
+.test-report .test-coverage pre { margin: 0 0 4px 1.5em; }
+/* The lines in the editor no example executed (the IDE; see coverageMarks),
+   in the hints' colours: the editor's own background is --glp-surface. */
+.coverage-line { background: var(--glp-warning-bg); }
+.coverage-gutter { margin-left: 3px; width: 4px !important; background: var(--glp-warning); }
 .test-failure { margin: 0 0 10px; padding: 8px 10px; background: var(--glp-error-bg); border-left: 3px solid var(--glp-error); border-radius: var(--glp-radius); }
 .test-failure .secondary-button { margin-top: 8px; padding: 4px 10px; font-size: 13px; }
 
