@@ -16,7 +16,7 @@ npm run test:protocol  # builds the library, then runs scripts/check-embed-proto
 npm run test:runtime   # the runtime under CPython: scripts/check-runtime-{columns,values,doctests,coverage,calls,hints,fidelity,replay,…}.py
 npm run test:hints     # the error hints' wording (de/en) against the built dist/ (run a build first)
 npm run test:console   # the console in Chrome with Pyodide, against dist-embed/ (run build:embed first)
-npm run build:embed    # builds the iframe app + demo page into dist-embed/
+npm run build:embed    # builds the iframe app + demo page into dist-embed/ (plus embed/public/: coi-serviceworker.js, storage-check.html)
 npm run preview:embed  # serves dist-embed/ with COOP/COEP headers; open /demo.html
 ```
 
