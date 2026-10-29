@@ -887,9 +887,9 @@ function TestReportView({ report, t, onVisualizeExample }: { report: TestReport;
 }
 
 // Coverage after Tests that all passed: the lines no example executed, each
-// with its code, or a neutral note when every line ran.
+// with its code, or an informative note when every line ran.
 function TestCoverageView({ gaps, t }: { gaps: CoverageGap[]; t: CoreStrings }) {
-  if (gaps.length === 0) return <p className="test-coverage" role="note">{t.testsAllCovered ?? 'Every line of the functions was run by at least one example. This doesn\'t show whether the examples also check the edge cases.'}</p>
+  if (gaps.length === 0) return <p className="test-coverage test-coverage--complete" role="note">{t.testsAllCovered ?? 'Every line of the functions was run by at least one example. This doesn\'t show whether the examples also check the edge cases.'}</p>
   const label = (gap: CoverageGap) => t.testsUncoveredLines?.(gap.start, gap.end) ?? (gap.start === gap.end ? `Line ${gap.start}:` : `Lines ${gap.start}\u2013${gap.end}:`)
   return (
     <div className="test-coverage" role="note">
