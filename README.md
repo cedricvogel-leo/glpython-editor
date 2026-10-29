@@ -162,13 +162,14 @@ glpython hint that it probably should `return` instead. Texts: `runTests`,
 **Coverage** (capability `coverage`, off by default): when all examples pass,
 the report also lists which lines of the tested file's functions no example
 executed, each with its code («Zeile 11: `return "ungenügend"`»; consecutive
-lines of one function as «Zeilen 8–12:»). Counted are the statements in
+lines of one function as «Zeilen 8–12:»), in a pale orange box like their
+marks in the editor. Counted are the statements in
 function bodies (also methods and nested functions), as Python's own `trace`
 module counts them during the examples - not `def` lines, docstrings, code
 outside functions, or other files such as libraries. With the editor, the same
 lines are marked in it (line background and a bar in the gutter) until the
-file is edited or the program runs again. When every line ran, a neutral note
-says so and that this doesn't show whether the examples check the edge cases:
+file is edited or the program runs again. When every line ran, a light blue
+note (`--glp-info`, never green like «bestanden») says so and that this doesn't show whether the examples check the edge cases:
 coverage finds untested code, not wrong code. Recorded with `sys.monitoring`,
 each line once, so it doesn't slow the examples down. Texts:
 `testsUncoveredHeading`, `testsUncoveredLines`, `testsAllCovered`.
@@ -369,14 +370,15 @@ and monospace fonts, no web fonts). A host can override any of them:
 | Variable | Role |
 |---|---|
 | `--glp-bg` | panel background |
-| `--glp-surface` | code in the visualizer, output, REPL; coverage after Tests |
+| `--glp-surface` | code in the visualizer, output, REPL |
 | `--glp-border` | decorative borders and separator lines |
-| `--glp-border-control` | borders of controls, call boxes in box mode; coverage after Tests (its bar) |
+| `--glp-border-control` | borders of controls, call boxes in box mode |
 | `--glp-text`, `--glp-text-muted` | text and code; line numbers, step counter, secondary info, connector lines |
 | `--glp-accent`, `--glp-on-accent` | active mode, scrubber, focus, primary button; text on it |
 | `--glp-current`, `--glp-current-outline` | current subexpression and new value, current line; next step (dashed) |
 | `--glp-error`, `--glp-error-bg` | errors, failing tests, «Erhalten · Erwartet» |
-| `--glp-warning`, `--glp-warning-bg` | hints; the coverage marks in the editor |
+| `--glp-warning`, `--glp-warning-bg` | hints; lines no example ran (coverage after Tests, and their marks in the editor) |
+| `--glp-info`, `--glp-info-bg` | information that isn't a result: every line ran (coverage after Tests) - never green |
 | `--glp-success` | passed tests, runtime ready |
 | `--glp-syntax-keyword`, `-string`, `-number`, `-comment` | syntax colours (names, operators, brackets use `--glp-text`) |
 | `--glp-font-code`, `--glp-font-ui`, `--glp-radius` | fonts and corner radius |

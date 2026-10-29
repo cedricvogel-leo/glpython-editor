@@ -17,6 +17,8 @@
   --glp-error-bg: #FDECEA;
   --glp-warning: #8A4B00;
   --glp-warning-bg: #FFF4E5;
+  --glp-info: #1D5B9A;
+  --glp-info-bg: #E3EEFA;
   --glp-success: #1E6B3A;
   --glp-syntax-keyword: #1F3A5F;
   --glp-syntax-string: #8A3B12;
@@ -309,9 +311,11 @@
 .error-hint code { font: 600 1em var(--glp-font-code); }
 .visual-error-hint { padding: 0 8px 4px; }
 .visual-error-hint .error-hint { margin: 0; }
-/* Coverage after Tests: neutral, neither a success nor a warning (covered
-   code can still be wrong). */
-.test-coverage { margin: 0 0 8px; padding: 6px 10px; color: var(--glp-text); background: var(--glp-surface); border-left: 3px solid var(--glp-border-control); border-radius: var(--glp-radius); font: 13px/1.5 var(--glp-font-ui); }
+/* Coverage after Tests: lines no example ran in the colours of their marks
+   in the editor; every line ran as information in blue - never green, since
+   covered code can still be wrong. */
+.test-coverage { margin: 0 0 8px; padding: 6px 10px; color: var(--glp-text); background: var(--glp-warning-bg); border-left: 3px solid var(--glp-warning); border-radius: var(--glp-radius); font: 13px/1.5 var(--glp-font-ui); }
+.test-coverage--complete { background: var(--glp-info-bg); border-left-color: var(--glp-info); }
 .test-coverage-heading { margin: 0 0 2px; }
 .test-coverage ul { margin: 0; padding: 0; list-style: none; }
 .test-coverage code { font: 13px/1.5 var(--glp-font-code); }
