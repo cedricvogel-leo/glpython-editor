@@ -5,6 +5,9 @@ import {
   GLPYTHON_MAX_SOURCE_LENGTH,
   parseParentMessage,
   parseParentOrigin,
+  deleteProjectFile,
+  renameProjectFile,
+  updateProjectFile,
 } from '../dist/index.js'
 
 assert.equal(parseParentOrigin('https://course.example'), 'https://course.example')
@@ -130,5 +133,22 @@ const readyMessage = {
   capabilities: { input: false },
 }
 assert.equal(readyMessage.capabilities.input, false)
+
+// Not the protocol, but the one check against the built library: a
+// read-only file (a course's library) is never changed, renamed or deleted by
+// the project helpers; an ordinary file still is.
+const project = {
+  id: 'p', name: 'p', mainFile: 'auswerter.py',
+  files: {
+    'parser.py': { path: 'parser.py', label: 'parser', kind: 'python', code: 'def parse(text): ...', readOnly: true },
+    'auswerter.py': { path: 'auswerter.py', label: 'auswerter', kind: 'python', code: 'from parser import parse' },
+  },
+}
+assert.equal(updateProjectFile(project, 'parser.py', 'kaputt'), project)
+assert.equal(renameProjectFile(project, 'parser.py', 'p2.py'), project)
+assert.equal(deleteProjectFile(project, 'parser.py'), project)
+assert.equal(updateProjectFile(project, 'auswerter.py', 'x = 1').files['auswerter.py'].code, 'x = 1')
+assert.equal(updateProjectFile(project, 'auswerter.py', 'x = 1').files['parser.py'].readOnly, true)
+assert.deepEqual(Object.keys(renameProjectFile(project, 'auswerter.py', 'main.py').files), ['parser.py', 'main.py'])
 
 console.log('Embed protocol checks passed.')

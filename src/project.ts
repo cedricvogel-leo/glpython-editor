@@ -5,6 +5,10 @@ export type ProjectFile = {
   label: string
   code: string
   kind: ProjectFileKind
+  // A file to read, not to change - e.g. a course's library that learners
+  // use as a black box. The editor shows it read-only, and the helpers below
+  // don't change, rename or delete it.
+  readOnly?: boolean
 }
 
 export type Project = {
@@ -53,7 +57,7 @@ export function projectImportsGturtle(project: Project): boolean {
 
 export function updateProjectFile(project: Project, path: string, code: string): Project {
   const file = project.files[path]
-  if (!file) return project
+  if (!file || file.readOnly) return project
 
   return {
     ...project,
@@ -73,7 +77,7 @@ export function addProjectFile(project: Project, file: ProjectFile): Project {
 
 export function deleteProjectFile(project: Project, path: string): Project {
   const { [path]: deletedFile, ...remainingFiles } = project.files
-  if (!deletedFile) return project
+  if (!deletedFile || deletedFile.readOnly) return project
 
   const nextMainFile = project.mainFile === path
     ? Object.keys(remainingFiles).find((filePath) => remainingFiles[filePath].kind === 'python') ?? Object.keys(remainingFiles)[0]
@@ -84,7 +88,7 @@ export function deleteProjectFile(project: Project, path: string): Project {
 
 export function renameProjectFile(project: Project, path: string, nextPath: string): Project {
   const file = project.files[path]
-  if (!file || project.files[nextPath]) return project
+  if (!file || file.readOnly || project.files[nextPath]) return project
 
   const { [path]: renamedFile, ...remainingFiles } = project.files
   const nextFile = { ...renamedFile, path: nextPath, label: nextPath.replace(/\.[^/.]+$/, '') }
