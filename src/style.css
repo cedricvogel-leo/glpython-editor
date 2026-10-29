@@ -67,6 +67,7 @@
 .editor-tab { min-width: 130px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border: 0; border-right: 1px solid var(--glp-border); color: var(--glp-text-muted); background: var(--glp-surface); font: 13px var(--glp-font-code); cursor: pointer; }
 .editor-tab.active { color: var(--glp-text); background: var(--glp-bg); box-shadow: inset 0 2px 0 var(--glp-accent); }
 .tab-file-icon { display: inline-flex; color: var(--glp-text-muted); }
+.tab-read-only { display: inline-flex; color: var(--glp-text-muted); }
 .editor-tab.active .tab-file-icon { color: var(--glp-accent); }
 .tab-close { display: inline-flex; margin-left: auto; padding: 3px; color: var(--glp-text-muted); border-radius: var(--glp-radius); }
 .tab-close:hover { color: var(--glp-text); background: var(--glp-border); }

@@ -255,6 +255,13 @@ the embed's Reset does. The run button keeps its width when it becomes
 the editor. `capabilities={{ closeFileTabs: false }}` drops the ✕ on the file
 tabs, for a host that shows every file of the project as a tab.
 
+A file with `readOnly: true` (`ProjectFile`) is one to read, not to change,
+e.g. a course's library that learners use as a black box: the editor shows it
+read-only (on an iPad the keyboard doesn't open), its tab has a lock
+(`readOnlyFile`, also the message when typing into it), and
+`updateProjectFile`, `renameProjectFile` and `deleteProjectFile` leave it
+as it is. It runs, imports and visualizes like any other file.
+
 ### Compact embeds
 
 `GlPythonWorkspace` accepts optional `compact` and `capabilities` props. The
