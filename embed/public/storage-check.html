@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Speicher-Test</title>
+<!--
+  A diagnostic for the IDE's per-tab projects (P25): which of a tab's
+  markers - in sessionStorage and in history.state - survive a reload, Safari
+  unloading a background tab, and quitting Safari. Same origin as the IDE
+  (glpython-edu.github.io), so the same storage rules apply. Not linked from
+  anywhere; "?belasten" turns the page into a memory hog that makes iPadOS
+  unload background tabs.
+-->
+<style>
+  :root { --bg: #FFFFFF; --surface: #F3F4F6; --border: #D1D5DB; --text: #1A1A1A; --muted: #4B5563; --accent: #1F3A5F; --ok: #1E6B3A; --bad: #B42318; }
+  body { margin: 0; padding: 16px; color: var(--text); background: var(--bg); font: 16px/1.5 system-ui, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; }
+  h1 { margin: 0 0 4px; font-size: 22px; }
+  p { margin: 0 0 12px; }
+  .muted { color: var(--muted); font-size: 14px; }
+  .status { margin: 16px 0; padding: 12px 14px; background: var(--surface); border-left: 4px solid var(--accent); border-radius: 4px; }
+  .status div { margin: 2px 0; }
+  .ok { color: var(--ok); font-weight: 700; }
+  .bad { color: var(--bad); font-weight: 700; }
+  .buttons { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 20px; }
+  button, a.button { padding: 10px 14px; border: 1px solid var(--accent); border-radius: 4px; color: var(--accent); background: var(--bg); font: 600 15px/1.2 system-ui, sans-serif; text-decoration: none; cursor: pointer; }
+  button.primary { color: #FFFFFF; background: var(--accent); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { padding: 6px 8px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+  .scroll { overflow-x: auto; }
+  code { font: 14px ui-monospace, SFMono-Regular, Menlo, monospace; }
+</style>
+</head>
+<body>
+<main id="app"></main>
+<script>
+(() => {
+  const app = document.getElementById('app')
+  const SESSION_KEY = 'glp-storage-check'
+  const LOG_KEY = 'glp-storage-check-log'
+  const time = (ms) => new Date(ms).toLocaleTimeString('de-CH')
+  const read = (storage, key) => { try { return JSON.parse(storage.getItem(key)) } catch { return null } }
+  const write = (storage, key, value) => { try { storage.setItem(key, JSON.stringify(value)); return true } catch { return false } }
+
+  // "?belasten": fills memory step by step, so iPadOS unloads the other tabs.
+  if (new URLSearchParams(location.search).has('belasten')) {
+    document.title = 'Speicher belasten'
+    app.innerHTML = '<h1>Speicher belasten</h1><p>Diese Seite belegt Speicher, bis iPadOS andere Tabs entlädt. Sie darf dabei selbst abstürzen oder neu laden.</p><p id="amount" class="status">0 MB belegt</p><p class="muted">Wenn die Zahl nicht mehr steigt oder die Seite neu lädt: zum Tab «Speicher-Test» zurückwechseln.</p>'
+    const blocks = []
+    let seed = 2463534242
+    const step = () => {
+      const block = new Uint32Array(16 * 1024 * 1024) // 64 MB
+      for (let i = 0; i < block.length; i++) { seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5; block[i] = seed }
+      blocks.push(block)
+      document.getElementById('amount').textContent = `${blocks.length * 64} MB belegt`
+      if (blocks.length < 48) setTimeout(step, 150)
+    }
+    setTimeout(step, 300)
+    return
+  }
+
+  // Every page load of this tab, kept across tabs in localStorage.
+  const navigation = performance.getEntriesByType('navigation')[0]
+  const session = read(sessionStorage, SESSION_KEY)
+  const state = history.state && history.state.glpStorageCheck ? history.state.glpStorageCheck : null
+  const log = read(localStorage, LOG_KEY) || []
+  const load = {
+    nr: (log.length ? log[log.length - 1].nr : 0) + 1,
+    at: Date.now(),
+    type: navigation ? navigation.type : '?',
+    session: session ? session.id : null,
+    state: state ? state.id : null,
+  }
+  log.push(load)
+  write(localStorage, LOG_KEY, log.slice(-30))
+  let restoredFromCache = false
+  addEventListener('pageshow', (event) => { if (event.persisted) { restoredFromCache = true; render() } })
+
+  const setMarker = () => {
+    const marker = { id: Math.random().toString(36).slice(2, 7), at: Date.now() }
+    const sessionOk = write(sessionStorage, SESSION_KEY, marker)
+    history.replaceState({ ...(history.state || {}), glpStorageCheck: marker }, '', location.href)
+    current.session = sessionOk ? marker : null
+    current.state = marker
+    render()
+  }
+  const clearAll = () => {
+    try { sessionStorage.removeItem(SESSION_KEY); localStorage.removeItem(LOG_KEY) } catch {}
+    history.replaceState(null, '', location.href)
+    location.reload()
+  }
+  const current = { session, state }
+
+  const found = (marker) => marker
+    ? `<span class="ok">✓ gefunden</span> (Marker <code>${marker.id}</code>, gesetzt ${time(marker.at)})`
+    : '<span class="bad">✗ fehlt</span>'
+  const typeName = { navigate: 'neu geöffnet', reload: 'neu geladen', back_forward: 'vor/zurück', prerender: 'vorgeladen' }
+
+  function render() {
+    const rows = log.slice().reverse().map((entry) => `<tr><td>${entry.nr}</td><td>${time(entry.at)}</td><td>${typeName[entry.type] || entry.type}</td><td>${entry.session ? '✓ ' + entry.session : '✗'}</td><td>${entry.state ? '✓ ' + entry.state : '✗'}</td></tr>`).join('')
+    app.innerHTML = `
+      <h1>Speicher-Test</h1>
+      <p class="muted">Prüft, was ein Tab nach Neuladen, Entladen und Neustart von Safari noch weiss. Gleiche Adresse wie die IDE (glpython-edu.github.io).</p>
+      <div class="status">
+        <div><strong>Seitenaufbau Nr. ${load.nr}</strong> um ${time(load.at)}: ${typeName[load.type] || load.type}${restoredFromCache ? ' (aus dem Zwischenspeicher, nicht neu aufgebaut)' : ''}</div>
+        <div>Session-Speicher: ${found(current.session)}</div>
+        <div>history.state: ${found(current.state)}</div>
+      </div>
+      <div class="buttons">
+        <button type="button" class="primary" id="set">Marker setzen</button>
+        <a class="button" href="?belasten" target="_blank" rel="noopener">Belastungsseite öffnen</a>
+        <button type="button" id="clear">Alles zurücksetzen</button>
+      </div>
+      <h2 style="font-size:18px">Protokoll (neuester Seitenaufbau zuerst)</h2>
+      <div class="scroll"><table><thead><tr><th>Nr.</th><th>Zeit</th><th>Art</th><th>Session-Speicher</th><th>history.state</th></tr></thead><tbody>${rows}</tbody></table></div>
+`
+    document.getElementById('set').onclick = setMarker
+    document.getElementById('clear').onclick = clearAll
+  }
+  render()
+})()
+</script>
+</body>
+</html>
